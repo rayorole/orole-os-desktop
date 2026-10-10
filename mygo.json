@@ -15,5 +15,10 @@
   ],
   "resources": [
     "build/orole-daemon.exe"
-  ]
+  ],
+  "updates": {
+    "publicKey": "r5pzaURH7iwREwvLfAicm0eg7pk4c1mfWy5REkXLVVs=",
+    "github": "rayorole/orole-os-desktop",
+    "tagPrefix": "desktop-v"
+  }
 }

@@ -13,3 +13,9 @@ frontend/playwright-report/
 
 .shots/
 .orole-dev-alt/
+
+# release signing material must never be committed
+*.pfx
+*.p12
+mygo-update.key
+mygo-update.pub
