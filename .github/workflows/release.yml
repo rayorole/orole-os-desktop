@@ -1,0 +1,124 @@
+name: release
+
+# Tag desktop-vX.Y.Z -> verify -> build, sign updates, upload to a DRAFT GitHub release.
+# Nothing here publishes: a human reviews the draft and runs the `gh release edit` command printed
+# at the end of the run. Runs on tag pushes only (no pull_request, no manual dispatch), and the
+# update signing key is only ever given to the final build step of the `release` job.
+on:
+  push:
+    tags: ["desktop-v*"]
+
+permissions:
+  contents: read
+
+# One run per tag; a second push of the same tag waits instead of cancelling a half-uploaded build.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Tag matches mygo.json version and CHANGELOG.md
+        shell: pwsh
+        run: ./scripts/check-release.ps1 -Tag $env:GITHUB_REF_NAME
+      - name: Go vet
+        run: go vet ./...
+      - name: Go test (race)
+        run: go test -race ./...
+      - name: Frontend install
+        run: bun install --cwd frontend --frozen-lockfile
+      - name: Frontend check (tsc, lint, vitest)
+        run: bun run --cwd frontend check
+      - name: Bindings are up to date
+        shell: pwsh
+        run: |
+          go tool mygo generate
+          git diff --exit-code -- frontend/src/mygo.ts
+
+  release:
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 45
+    environment: release
+    permissions:
+      contents: write # the draft release and the uploads to it
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Frontend install
+        run: bun install --cwd frontend --frozen-lockfile
+      - name: Release notes from CHANGELOG.md
+        id: notes
+        shell: pwsh
+        run: |
+          $version = ./scripts/check-release.ps1 -Tag $env:GITHUB_REF_NAME -NotesOut "$env:RUNNER_TEMP/notes.md"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Create the draft release (kept if it exists)
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.notes.outputs.version }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $repo = $env:GITHUB_REPOSITORY
+          $isDraft = gh release view $tag --repo $repo --json isDraft --jq .isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if ($isDraft -ne "true") { throw "release $tag is already published; refusing to replace its files" }
+            Write-Host "draft release $tag exists; its files are replaced"
+          } else {
+            $ghArgs = @("release", "create", $tag, "--repo", $repo, "--draft", "--verify-tag", "--latest=false",
+              "--title", "Orole OS $env:VERSION", "--notes-file", "$env:RUNNER_TEMP/notes.md")
+            if ($env:VERSION.Contains("-")) { $ghArgs += "--prerelease" }
+            gh @ghArgs
+            if ($LASTEXITCODE) { throw "gh release create failed" }
+          }
+      - name: Build, sign updates and upload to the draft
+        shell: pwsh
+        env:
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: ./scripts/build.ps1 -Upload
+      - name: Draft has the installer, archive and update manifest
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.notes.outputs.version }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $v = [regex]::Escape($env:VERSION)
+          $names = @(gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets --jq ".assets[].name")
+          if ($LASTEXITCODE) { throw "cannot list the assets of $tag" }
+          $names | ForEach-Object { Write-Host "asset: $_" }
+          $required = [ordered]@{
+            "installer"       = "Setup.*$v.*\.exe$"
+            "archive"         = "-$v-windows-amd64\.tar\.gz$"
+            "update manifest" = "^update-windows-amd64\.json$"
+          }
+          $missing = @($required.Keys | Where-Object { $p = $required[$_]; -not ($names | Where-Object { $_ -match $p }) })
+          if ($missing) { throw "draft $tag is missing: $($missing -join ', ')" }
+      - name: Draft ready, publish manually
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $cmd = "gh release edit $tag --draft=false --latest=false"
+          Write-Host "::notice title=Draft release $tag is ready::Review it, then publish with: $cmd"
+          "Draft release **$tag** is ready. Review it, then publish with:`n`n``$cmd```n" >> $env:GITHUB_STEP_SUMMARY
