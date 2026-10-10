@@ -33,7 +33,7 @@ GitHub #7. Versions below are declared direct dependencies; `go.mod`, `go.sum`, 
 | SSH machines | Host address, independently verified host fingerprint, OS-protected authentication, approved roots/commands | Transport separate from execution backend; native and remote files/commands | Real external Windows and Linux SSH hosts not configured for acceptance |
 | Coding agents | Installed CLI and that CLI's valid authentication | Capability-detected Claude/Codex/OpenCode/Gemini/custom adapters | Actual Codex turn exercised; Claude authorization expired in recorded attempt; missing tools report unavailable |
 | Declarative plugins | Registered MCP server/tool plus reviewed exact manifest | Fixed actions contribute commands/widgets; trust and per-call authorization are separate | No arbitrary JavaScript host or automatic tool execution |
-| Signed release/update | Maintainer-held signing material, trusted public key, published signed release | MyGo updater bridge and replacement/lifecycle barriers | Unsigned installer currently; end-to-end signed upgrade not claimed |
+| Signed release/update | Maintainer-held signing key (GitHub `release` environment), public key in `mygo.json`, tag-triggered `release.yml` draft releases | MyGo updater bridge and replacement/lifecycle barriers; [releasing](../development/releasing.md) | Update channel signed; installer not Authenticode-signed; end-to-end signed upgrade not yet verified |
 
 ## Required delivery order
 

@@ -41,7 +41,13 @@ closes the app, stops the daemon and uninstalls (`Uninstall.exe /S _?=<dir>`).
 exe resource) and `cmd/desktop/window-icon.png` (256x256, embedded and applied with `Window.SetIcon`). Original
 artwork: a lighthouse beam over a horizon line on dark navy.
 
+## Release build
+
+`./scripts/build.ps1 -Upload` (CI only; needs `GH_TOKEN` and `MYGO_UPDATER_PRIVATE_KEY`) runs the same steps but ends
+with `go tool mygo build -upload`, which signs the update manifest and uploads to a draft release. See
+[releasing.md](releasing.md).
+
 ## Not configured
 
-Code signing (`windows.certificate` / `signCommand`) and update signing keys are not set up: installers are
-unsigned (SmartScreen will warn). See `updates.md`.
+Authenticode code signing (`windows.certificate` / `signCommand`) is not set up: installers are unsigned (SmartScreen
+will warn). Update-channel signing is configured; see `updates.md`.
