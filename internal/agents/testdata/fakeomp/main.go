@@ -48,6 +48,20 @@ func emit(v any) {
 	omu.Unlock()
 }
 
+// emitSequence writes frames back to back: omp's v2 transport promises an uninterrupted
+// rpc_chunk sequence, so a response to a concurrent command (the adapter's get_state after
+// a message_end) must never land between two chunks.
+func emitSequence(vs []msg) {
+	omu.Lock()
+	defer omu.Unlock()
+	for _, v := range vs {
+		b, _ := json.Marshal(v)
+		out.Write(b)
+		out.WriteByte('\n')
+	}
+	out.Flush()
+}
+
 func arg(name string) string {
 	for i, a := range args {
 		if a == name && i+1 < len(args) {
@@ -327,10 +341,12 @@ func run(message, promptID string, mu *sync.Mutex, aborted *bool, steered *[]str
 		frame, _ := json.Marshal(msg{"type": "message_end", "messageId": "msg-big", "message": m})
 		const size = 100 << 10
 		count := (len(frame) + size - 1) / size
+		chunks := make([]msg, 0, count)
 		for i := range count {
 			part := frame[i*size : min(len(frame), (i+1)*size)]
-			emit(msg{"type": "rpc_chunk", "chunkId": "rpc-1", "index": i, "count": count, "byteLength": len(frame), "data": base64.StdEncoding.EncodeToString(part)})
+			chunks = append(chunks, msg{"type": "rpc_chunk", "chunkId": "rpc-1", "index": i, "count": count, "byteLength": len(frame), "data": base64.StdEncoding.EncodeToString(part)})
 		}
+		emitSequence(chunks)
 		end()
 	default:
 		finish("done: " + message)

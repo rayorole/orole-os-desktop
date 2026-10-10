@@ -112,6 +112,18 @@ func eventKinds(evs []agents.Event) []string {
 	return out
 }
 
+// eventsDetail is eventKinds with the text of error and activity events, for failure messages.
+func eventsDetail(evs []agents.Event) []string {
+	out := make([]string, len(evs))
+	for i, e := range evs {
+		out[i] = e.Kind
+		if e.Kind == agents.EvError || e.Kind == agents.EvActivity {
+			out[i] += "(" + e.Text + ")"
+		}
+	}
+	return out
+}
+
 func firstOf(t *testing.T, evs []agents.Event, kind string) agents.Event {
 	t.Helper()
 	for _, e := range evs {
@@ -403,8 +415,14 @@ func TestOmpChunkedFrames(t *testing.T) {
 		t.Fatal(err)
 	}
 	evs := untilKind(t, r.p, agents.EvTurnDone)
-	if msg := firstOf(t, evs, agents.EvMessage).Text; len(msg) != 307200 || countOf(evs, agents.EvError) != 0 {
-		t.Fatalf("reassembled message length %d, events %v", len(msg), eventKinds(evs))
+	var msg string
+	for _, e := range evs {
+		if e.Kind == agents.EvMessage {
+			msg = e.Text
+		}
+	}
+	if len(msg) != 307200 || countOf(evs, agents.EvError) != 0 {
+		t.Fatalf("reassembled message length %d, events %v", len(msg), eventsDetail(evs))
 	}
 	if err := r.p.Send("BADCHUNK"); err != nil {
 		t.Fatal(err)
