@@ -48,7 +48,7 @@ export function MCPSettings({ adapter }: { adapter: "mail" | "drive" }) {
           <DialogPanel><Fieldset className="flex flex-col gap-4" disabled={busy}>
             <Field><FieldLabel htmlFor="mcp-name">Name</FieldLabel><Input id="mcp-name" name="name" required defaultValue={preset ? QUICK_SERVERS[preset].name : ""} /></Field>
             <Field><FieldLabel htmlFor="mcp-url">Server URL</FieldLabel><Input id="mcp-url" name="url" type="url" required defaultValue={preset ? QUICK_SERVERS[preset].url : ""} /></Field>
-            <Field><FieldLabel htmlFor="mcp-client">Client ID or CIMD URL</FieldLabel><Input id="mcp-client" name="clientId" autoComplete="off" /><FieldDescription>A public OAuth client ID or HTTPS client ID metadata document URL. Blank requests dynamic registration only when supported.</FieldDescription></Field>
+            <Field><FieldLabel htmlFor="mcp-client">Client ID or CIMD URL</FieldLabel><Input id="mcp-client" name="clientId" autoComplete="off" /><FieldDescription>A public OAuth client ID or HTTPS client ID metadata document URL. Blank uses Orole’s own client metadata document, or dynamic registration, when the server supports it.</FieldDescription></Field>
             <Field><FieldLabel htmlFor="mcp-scopes">Scopes (optional)</FieldLabel><Input id="mcp-scopes" name="scopes" /><FieldDescription>Space-separated. Blank uses the server’s requested scopes.</FieldDescription></Field>
             <Failure error={error} />
           </Fieldset></DialogPanel>

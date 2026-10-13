@@ -92,13 +92,13 @@ The daemon listens only on `127.0.0.1:<random>/callback`, for five minutes, and 
 Live redirect acceptance remains **unverified**: metadata does not describe redirect matching rules, and login/client registration is unavailable. The server's client registration must permit native loopback redirects at arbitrary ports per RFC 8252, or an administrator must provide a compatible client. Do not assume a wildcard or specific URI is accepted merely because it appears in an example.
 
 To authorize:
-1. In Settings > Integrations, quick-add Orole Mail or Orole Drive.
-2. Obtain a public native client ID from the server administrator, or host a client metadata JSON document at an HTTPS URL that the server can retrieve (the server advertises CIMD support). Configure its allowed redirect URIs for the loopback callback and native-port matching. The document must identify its own URL as `client_id`, list `authorization_code` and `refresh_token` grants, `code` response type, and `none` token endpoint authentication.
-3. Enter the registered client ID/document URL in the server settings. Select scopes explicitly if desired; `offline_access` is added when advertised.
+1. In Settings > Integrations, quick-add Orole Mail or Orole Drive (or add the URL as a custom connector).
+2. Leave the client ID empty. Both servers advertise CIMD, so Orole OS identifies itself with its published client metadata document `https://orole.be/oauth/orole-os.json` (source: `public/oauth/orole-os.json` in `rayorole/orole-directory`). That document is a `native` public client (`token_endpoint_auth_method: none`, `authorization_code` + `refresh_token`, `code`) whose `redirect_uris` is `http://127.0.0.1/callback`; the servers' better-auth provider matches loopback redirects on any port. A configured client ID or document URL still takes priority. Order: configured client → Orole's CIMD (when advertised) → DCR → `ErrNoRegistration`.
+3. Select scopes explicitly if desired; `offline_access` is added when advertised.
 4. Click Authorize, authenticate in the system browser, review consent, and allow the redirect back to Orole OS.
-5. Inspect discovered tool schemas and permissions before using Mail/Drive actions. Their actual tool names/output schemas cannot be verified until this step.
+5. Inspect discovered tool schemas and permissions before using Mail/Drive actions.
 
-No dummy client ID is embedded; absent registration is a precise error, not a fabricated successful authorization.
+Changing the CIMD document's redirect URIs or grants changes what every CIMD server accepts from Orole OS; keep it in sync with `OroleClientMetadataURL` in `internal/mcp/oauth_flow.go`.
 
 ## Library decision
 

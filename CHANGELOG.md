@@ -10,6 +10,7 @@ notes. See `docs/development/updates.md`.
 
 ### Fixed
 - Windows Codex downloads now include the code-mode host and sandbox resources from the hash-verified official npm platform package. Incomplete managed installations can be repaired by downloading again. The Codex agent picker uses the same managed runtime as Settings and chat.
+- Connecting an MCP server that accepts OAuth client ID metadata documents but not dynamic registration (such as Orole Drive and Orole Mail) no longer fails with "the authorization server offers no way to register this client". Orole OS now signs in with its own published client document, `https://orole.be/oauth/orole-os.json`, so you don't have to enter a client ID. A client ID you set on the server still takes priority.
 
 ## 0.3.1-dev - 2026-10-13
 

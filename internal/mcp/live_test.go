@@ -39,7 +39,7 @@ func TestLiveMailDiscovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("Live diagnostics (no login):\n%s", raw)
-	if discovery.AS.RegistrationEndpoint == "" {
+	if discovery.AS.RegistrationEndpoint == "" && !discovery.AS.ClientIDMetadataDocumentOK {
 		_, err = h.m.StartAuth(ctx, server.ID)
 		if !errors.Is(err, ErrNoRegistration) {
 			t.Fatalf("expected explicit client registration blocker, got %v", err)

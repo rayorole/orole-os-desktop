@@ -395,14 +395,13 @@ func TestClientRegistrationChoices(t *testing.T) {
 			t.Fatalf("got %v", err)
 		}
 	})
-	t.Run("cimd advertised but no client id configured explains what to do", func(t *testing.T) {
+	t.Run("cimd advertised and no client id configured uses Orole's metadata document over DCR", func(t *testing.T) {
 		h := newHarness(t)
-		srv := mcptest.New(t, mcptest.Options{CIMD: true})
+		srv := mcptest.New(t, mcptest.Options{CIMD: true, DCR: true})
 		st := h.add(t, srv, AddParams{})
-		h.wait(t, st.ID, StatusAuthRequired)
-		_, err := h.m.StartAuth(ctx, st.ID)
-		if !errors.Is(err, ErrNoRegistration) || !strings.Contains(err.Error(), "client ID metadata document") {
-			t.Fatalf("got %v", err)
+		start := h.authorize(t, srv, st.ID)
+		if start.Kind != "cimd" || srv.Authorizations[0].ClientID != OroleClientMetadataURL || len(srv.Registrations) != 0 {
+			t.Fatalf("kind %s authz %+v registrations %d", start.Kind, srv.Authorizations, len(srv.Registrations))
 		}
 	})
 }

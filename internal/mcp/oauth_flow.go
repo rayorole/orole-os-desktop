@@ -279,12 +279,19 @@ func awaitCallback(ctx context.Context, ln net.Listener, state, issuer string, i
 	}
 }
 
-// resolveClient picks how Orole OS identifies itself to the authorization server.
+// OroleClientMetadataURL is Orole OS's published OAuth client ID metadata document
+// (served from orole-directory's public/oauth/orole-os.json). Its redirect_uris allow
+// http://127.0.0.1/callback on any port, so it fits the loopback callback used here.
+const OroleClientMetadataURL = "https://orole.be/oauth/orole-os.json"
+
+// resolveClient picks how Orole OS identifies itself to the authorization server,
+// in the MCP authorization spec's order of preference:
 //
 //  1. a configured client ID: an https client-ID metadata document URL when the server
 //     supports those (CIMD), otherwise a pre-registered client (optional secret in the credential store);
-//  2. dynamic client registration (RFC 7591) when a registration endpoint is advertised;
-//  3. otherwise ErrNoRegistration, with what the user can do about it.
+//  2. Orole OS's own client metadata document when the server supports CIMD;
+//  3. dynamic client registration (RFC 7591) when a registration endpoint is advertised;
+//  4. otherwise ErrNoRegistration, with what the user can do about it.
 func (m *Manager) resolveClient(ctx context.Context, cfg ServerConfig, disc *Discovery, redirect string) (clientReg, error) {
 	as := disc.AS
 	if cfg.OAuthClientID != "" {
@@ -304,16 +311,13 @@ func (m *Manager) resolveClient(ctx context.Context, cfg ServerConfig, disc *Dis
 		}
 		return clientReg{kind: "preregistered", clientID: cfg.OAuthClientID, secret: secret, style: style}, nil
 	}
+	if as.ClientIDMetadataDocumentOK {
+		return clientReg{kind: "cimd", clientID: OroleClientMetadataURL, style: "params"}, nil
+	}
 	if as.RegistrationEndpoint != "" {
 		return m.registerClient(ctx, as, redirect, cfg)
 	}
-	hint := "the server has no dynamic registration endpoint"
-	if as.ClientIDMetadataDocumentOK {
-		hint += " but supports client ID metadata documents: set this server's OAuth client ID to the https URL of a hosted client metadata document whose redirect_uris allow http://127.0.0.1/callback"
-	} else {
-		hint += ": register a client on the server and set its client ID here"
-	}
-	return clientReg{}, fmt.Errorf("%w (%s)", ErrNoRegistration, hint)
+	return clientReg{}, fmt.Errorf("%w (the server supports neither dynamic registration nor client ID metadata documents: register a client on the server and set its client ID here)", ErrNoRegistration)
 }
 
 // registerClient performs RFC 7591 dynamic client registration as a public native client.
