@@ -161,7 +161,7 @@ func (m *Manager) Ensure(ctx context.Context, botID string) (*Guest, error) {
 		}
 		if m.deleting[botID] {
 			m.mu.Unlock()
-			return nil, errDeleting
+			return nil, ErrDeleting
 		}
 		if inst := m.vms[botID]; inst != nil {
 			switch inst.state {
@@ -360,6 +360,14 @@ func (m *Manager) start(ctx context.Context, botID string) (VM, *Guest, error) {
 	rec, found, err := m.store.Get(ctx, botID)
 	if err != nil {
 		return nil, nil, err
+	}
+	// The overlay is a delta on the base image it was made from: boot that version, and never another one.
+	if found && rec.ImageVersion != img.Version {
+		prev, ok := installedImage(m.cfg.Paths, rec.ImageVersion)
+		if !ok {
+			return nil, nil, fmt.Errorf("%w (version %s)", ErrImageGone, rec.ImageVersion)
+		}
+		img = prev
 	}
 	now := m.cfg.Now()
 	if !found {

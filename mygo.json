@@ -5,7 +5,7 @@
   "copyright": "Copyright (c) 2026 Orole",
   "main": "./cmd/desktop",
   "devUrl": "http://localhost:5173",
-  "devCommand": "go build -o build/orole-daemon.exe ./cmd/daemon && bun run --cwd frontend dev",
+  "devCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-dev-daemon.ps1 && bun run --cwd frontend dev",
   "buildCommand": "bun run --cwd frontend build",
   "frontendDist": "frontend/dist",
   "bindings": "frontend/src/mygo.ts",
@@ -14,7 +14,8 @@
     "orole"
   ],
   "resources": [
-    "build/orole-daemon.exe"
+    "build/orole-daemon.exe",
+    "build/orole-sandbox-setup.exe"
   ],
   "updates": {
     "publicKey": "r5pzaURH7iwREwvLfAicm0eg7pk4c1mfWy5REkXLVVs=",

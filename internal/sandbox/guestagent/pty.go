@@ -20,6 +20,7 @@ type PTYSpec struct {
 	Dir        string
 	Env        []string
 	Cols, Rows int
+	RunAs      *Identity // nil runs the shell as the agent's user
 }
 
 // PTY is a running terminal process inside the guest.
@@ -36,11 +37,12 @@ var errPTYUnsupported = errors.New("terminals are not available on this guest OS
 func (a *Agent) handlePTY(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	p, err := a.cfg.StartPTY(PTYSpec{
-		Argv: a.cfg.LoginShell,
-		Dir:  a.cfg.Home,
-		Env:  append(os.Environ(), "HOME="+a.cfg.Home, "TERM=xterm-256color"),
-		Cols: dimension(q.Get("cols"), 80),
-		Rows: dimension(q.Get("rows"), 24),
+		Argv:  a.cfg.LoginShell,
+		Dir:   a.cfg.Home,
+		Env:   append(identityEnv(os.Environ(), a.cfg.Home, a.cfg.RunAs), "TERM=xterm-256color"),
+		Cols:  dimension(q.Get("cols"), 80),
+		Rows:  dimension(q.Get("rows"), 24),
+		RunAs: a.cfg.RunAs,
 	})
 	if errors.Is(err, errPTYUnsupported) {
 		http.Error(w, err.Error(), http.StatusNotImplemented)

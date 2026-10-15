@@ -11,7 +11,7 @@ import (
 )
 
 // Delete stops the bot's VM if any (waiting for a boot in progress), then removes its overlay disk, socket and
-// record. Ensure for the bot fails with errDeleting meanwhile. The sandbox log is kept.
+// record. Ensure for the bot fails with ErrDeleting meanwhile. The sandbox log is kept.
 func (m *Manager) Delete(ctx context.Context, botID string) error {
 	if err := checkBotID(botID); err != nil {
 		return err
@@ -19,7 +19,7 @@ func (m *Manager) Delete(ctx context.Context, botID string) error {
 	m.mu.Lock()
 	if m.deleting[botID] {
 		m.mu.Unlock()
-		return errDeleting
+		return ErrDeleting
 	}
 	m.deleting[botID] = true
 	m.mu.Unlock()
@@ -50,7 +50,7 @@ func (m *Manager) Delete(ctx context.Context, botID string) error {
 			st := m.statusLocked(botID)
 			m.mu.Unlock()
 			m.publish(st)
-			m.finishStop(inst, errDeleting)
+			m.finishStop(inst, ErrDeleting)
 		default:
 			gone := inst.gone
 			m.mu.Unlock()

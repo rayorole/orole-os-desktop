@@ -9,6 +9,7 @@ the credential store; no network-facing management listener; external content is
 |---|---|---|
 | Who can talk to the daemon | pipe DACL = current user SID only, protected; plus a per-run 256-bit token in a 0600 file, constant-time compare; `hello` first, 5 s deadline | `internal/ipc` |
 | Network exposure | No TCP/HTTP daemon management listener. OAuth callbacks and explicitly enabled signed webhooks bind loopback only; acceptance-only WebView2 CDP is opt-in loopback | `internal/mcp`, `internal/automations`, packaged acceptance launcher |
+| Bot computers | add no listener: QEMU connects to AF_UNIX sockets the daemon creates in `<data>\sandbox\run\`, a folder with an explicit protected DACL (user and SYSTEM). `orole-sandbox-setup.exe` is the only component Orole runs elevated (once, via UAC, hash-pinned at build time); the daemon never is | `internal/sandbox`, `cmd/orole-sandbox-setup` |
 | Frontend to Go | MyGo bindings expose only methods of bound services; they hold no authority beyond what the daemon enforces | `internal/app` |
 | Terminals created from the UI | `owner` and `command` fields are cleared; only daemon code can mark agent-owned terminals | `svc` `terminals.create` |
 | Files | only inside approved, fully-resolved roots (`file_roots` for local; pinned `projects.path` for git) | `internal/files` |

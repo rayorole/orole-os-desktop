@@ -1,0 +1,111 @@
+name: qemu-asset
+
+# Tag qemu-v<installer date> (or run manually) -> download the pinned official QEMU for Windows installer
+# (Stefan Weil's build, qemu.weilnetz.de), verify its SHA-512, unpack it with 7-Zip and repackage only what the
+# bot computer runs (qemu-system-x86_64, qemu-img, their DLLs, firmware) into one zip on a DRAFT release. Nothing
+# here publishes: a human reviews the draft and publishes it; Orole pins the zip's SHA-256 in
+# internal/sandbox/pins.go (scripts/sandbox-pins.ps1).
+# A manual run (workflow_dispatch) needs no tag: the draft targets the dispatched commit and the tag
+# qemu-v<QEMU_BUILD> is created when the draft is published.
+on:
+  push:
+    tags: ["qemu-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qemu-asset-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  QEMU_BUILD: "20260811"
+  QEMU_SHA512: "5bcf9eed634e8575a37b74f445af41a2fe4106da512d0c30c368301d4c105037fdfab40a5287367a28a957624cddebbc8c07e16c88ab6634f554cdf3d16bf543"
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: write # the draft release and its uploads
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Tag matches the pinned build
+        shell: pwsh
+        run: |
+          $tag = "qemu-v$env:QEMU_BUILD"
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne $tag) { throw "tag $env:GITHUB_REF_NAME does not match QEMU_BUILD $env:QEMU_BUILD" }
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+      - name: Download and verify the installer
+        shell: pwsh
+        run: |
+          $f = "qemu-w64-setup-$env:QEMU_BUILD.exe"
+          curl.exe -sSfL -o $f "https://qemu.weilnetz.de/w64/$f"
+          if ($LASTEXITCODE) { throw "download failed" }
+          $h = (Get-FileHash $f -Algorithm SHA512).Hash.ToLower()
+          if ($h -ne $env:QEMU_SHA512) { throw "SHA-512 mismatch: $h" }
+      - name: Unpack and keep what the bot computer needs
+        shell: pwsh
+        run: |
+          7z x "qemu-w64-setup-$env:QEMU_BUILD.exe" -ofull -y | Out-Null
+          if ($LASTEXITCODE) { throw "7z failed" }
+          New-Item -ItemType Directory pkg, pkg\share | Out-Null
+          Copy-Item full\qemu-system-x86_64.exe, full\qemu-img.exe -Destination pkg\
+          Copy-Item full\*.dll -Destination pkg\
+          Copy-Item full\share\*.bin, full\share\*.rom -Destination pkg\share\
+          Get-ChildItem full -File | Where-Object { $_.Name -match '^(COPYING|LICENSE|README)' } | Copy-Item -Destination pkg\
+          Set-Content pkg\SOURCE.txt -Value @(
+            "QEMU for Windows, build $env:QEMU_BUILD, unmodified files from",
+            "https://qemu.weilnetz.de/w64/qemu-w64-setup-$env:QEMU_BUILD.exe (SHA-512 $env:QEMU_SHA512).",
+            "QEMU is free software under the GNU General Public License version 2.",
+            "Source: https://gitlab.com/qemu-project/qemu ; Windows build scripts: https://qemu.weilnetz.de/"
+          )
+      - name: Smoke test (starts, has WHPX, qemu-img runs)
+        shell: pwsh
+        run: |
+          & pkg\qemu-system-x86_64.exe --version
+          if ($LASTEXITCODE) { throw "qemu-system-x86_64 does not start (missing DLL?)" }
+          $accel = (& pkg\qemu-system-x86_64.exe -accel help) -join "`n"
+          if ($accel -notmatch 'whpx') { throw "this build has no WHPX accelerator: $accel" }
+          & pkg\qemu-img.exe --version
+          if ($LASTEXITCODE) { throw "qemu-img does not start" }
+          if (-not (Test-Path pkg\share\bios-256k.bin)) { throw "firmware missing" }
+      - name: Zip and hash
+        shell: pwsh
+        run: |
+          $zip = "qemu-$env:QEMU_BUILD-win64.zip"
+          Push-Location pkg
+          7z a -tzip "..\$zip" * -r | Out-Null
+          if ($LASTEXITCODE) { throw "zip failed" }
+          Pop-Location
+          $h = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          [IO.File]::WriteAllText("SHA256SUMS", "$h  $zip`n")
+          Get-Content SHA256SUMS
+          (Get-Item $zip).Length
+      - name: Create the draft release
+        shell: pwsh
+        run: |
+          $tag = $env:RELEASE_TAG
+          # `gh release view <tag>` does not find drafts, so list them too (limit above the repo's release count).
+          $existing = gh release list --repo $env:GITHUB_REPOSITORY --limit 1000 --json tagName,isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE) { throw "gh release list failed" }
+          if (@($existing | Where-Object { $_.tagName -eq $tag }).Count -gt 0) { throw "release $tag exists (published or draft); refusing to replace its files" }
+          # A tag push already has its tag; a manual run targets the dispatched commit instead.
+          [string[]]$where = if ($env:GITHUB_REF_TYPE -eq "tag") { @("--verify-tag") } else { @("--target", $env:GITHUB_SHA) }
+          gh release create $tag --repo $env:GITHUB_REPOSITORY --draft @where --prerelease --latest=false `
+            --title "QEMU for the bot computer ($env:QEMU_BUILD)" `
+            --notes "Unmodified QEMU for Windows build $env:QEMU_BUILD (see SOURCE.txt in the zip), repackaged for Orole's bot computer." `
+            "qemu-$env:QEMU_BUILD-win64.zip" SHA256SUMS
+          if ($LASTEXITCODE) { throw "gh release create failed" }
+      - name: Draft ready, publish manually
+        shell: pwsh
+        run: |
+          $cmd = "gh release edit $env:RELEASE_TAG --draft=false --latest=false"
+          Write-Host "::notice title=Draft release $env:RELEASE_TAG is ready::Review it, then publish with: $cmd"
+          "Draft release **$env:RELEASE_TAG** is ready. Review it, then publish with:`n`n``$cmd```n" >> $env:GITHUB_STEP_SUMMARY

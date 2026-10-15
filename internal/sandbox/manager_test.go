@@ -138,6 +138,54 @@ func TestEnsureRecordsSandboxAndBootSpec(t *testing.T) {
 	}
 }
 
+// An overlay is a qcow2 delta on the base image it was made from, so a bot keeps booting the kernel, initrd
+// and base of its recorded image version while those files are still installed, and never boots it against
+// another base.
+func TestEnsureBootsTheImageVersionTheOverlayWasMadeFrom(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		installed bool
+	}{{"old version installed", true}, {"old version gone", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, nil)
+			old := h.paths.Image("v0")
+			if tc.installed {
+				if err := os.MkdirAll(old, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				for _, f := range []string{imageKernel, imageInitrd, imageCmdline, imageBase, completeMark} {
+					if err := os.WriteFile(filepath.Join(old, f), nil, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			rec := Record{BotID: "bot1", ImageVersion: "v0", OverlayPath: h.paths.Overlay("bot1"), Limits: DefaultLimits(), CreatedAt: h.clock()}
+			if err := h.store.Upsert(context.Background(), rec); err != nil {
+				t.Fatal(err)
+			}
+			if !tc.installed {
+				_, err := h.m.Ensure(context.Background(), "bot1")
+				if !errors.Is(err, ErrImageGone) || !errors.Is(err, ErrBootFailed) || !strings.Contains(err.Error(), "v0") {
+					t.Fatalf("Ensure = %v, want ErrImageGone naming v0", err)
+				}
+				if h.b.bootCount() != 0 {
+					t.Fatal("booted the overlay against another image version")
+				}
+			} else {
+				ensure(t, h, "bot1")
+				spec := h.b.spec(0)
+				want := ImageSet{Kernel: filepath.Join(old, imageKernel), Initrd: filepath.Join(old, imageInitrd), BaseImage: filepath.Join(old, imageBase)}
+				if spec.Kernel != want.Kernel || spec.Initrd != want.Initrd || spec.BaseImage != want.BaseImage {
+					t.Fatalf("spec = %+v, want %+v", spec, want)
+				}
+			}
+			if got, _, _ := h.store.Get(context.Background(), "bot1"); got.ImageVersion != "v0" {
+				t.Fatalf("recorded image version changed to %q", got.ImageVersion)
+			}
+		})
+	}
+}
+
 func TestEnsureRefusesWhenNotReady(t *testing.T) {
 	h := newHarness(t, nil)
 	h.b.update(func(b *fakeBackend) { b.avail = Availability{Reason: "whp-disabled"} })

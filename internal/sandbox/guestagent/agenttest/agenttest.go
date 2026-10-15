@@ -10,12 +10,18 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rayorole/orole-os-desktop/internal/sandbox/guestagent"
 )
 
 const helperArg = "orole-guest-helper"
 
-// Main runs one helper command when the binary was started as the helper, otherwise the tests.
+// Main runs guestagent's file helper or one helper command when the binary was started as one, otherwise the
+// tests.
 func Main(m *testing.M) {
+	if code, ok := guestagent.RunFileHelper(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); ok {
+		os.Exit(code)
+	}
 	if len(os.Args) > 2 && os.Args[1] == helperArg {
 		os.Exit(run(os.Args[2]))
 	}

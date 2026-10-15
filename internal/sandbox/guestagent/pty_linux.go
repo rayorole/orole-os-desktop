@@ -14,14 +14,14 @@ import (
 	"github.com/creack/pty"
 )
 
-// startPTY starts argv on a new pseudo-terminal (creack/pty sets the session and controlling terminal).
+// startPTY starts argv on a new pseudo-terminal, as s.RunAs when set.
 func startPTY(s PTYSpec) (PTY, error) {
 	if len(s.Argv) == 0 {
 		return nil, errors.New("no shell configured")
 	}
 	cmd := exec.Command(s.Argv[0], s.Argv[1:]...)
 	cmd.Dir, cmd.Env = s.Dir, s.Env
-	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(s.Cols), Rows: uint16(s.Rows)})
+	f, err := startOnPTY(cmd, s)
 	if err != nil {
 		return nil, err
 	}
@@ -32,6 +32,38 @@ func startPTY(s PTYSpec) (PTY, error) {
 		close(p.done)
 	}()
 	return p, nil
+}
+
+// startOnPTY is pty.StartWithSize plus running as s.RunAs: the shell gets its own session with the terminal as
+// its controlling tty, and the terminal belongs to the user it runs as (as login does), so tools that check
+// their tty (mesg, ssh, sudo-like prompts) work.
+func startOnPTY(cmd *exec.Cmd, s PTYSpec) (*os.File, error) {
+	ptmx, tty, err := pty.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer tty.Close()
+	if err := pty.Setsize(ptmx, &pty.Winsize{Cols: uint16(s.Cols), Rows: uint16(s.Rows)}); err != nil {
+		_ = ptmx.Close()
+		return nil, err
+	}
+	if s.RunAs != nil {
+		if err := tty.Chown(int(s.RunAs.UID), -1); err != nil {
+			_ = ptmx.Close()
+			return nil, err
+		}
+	}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+	if err := setIdentity(cmd, s.RunAs); err != nil {
+		_ = ptmx.Close()
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		_ = ptmx.Close()
+		return nil, err
+	}
+	return ptmx, nil
 }
 
 type linuxPTY struct {

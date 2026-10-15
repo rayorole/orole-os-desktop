@@ -34,6 +34,7 @@ import (
 	"github.com/rayorole/orole-os-desktop/internal/plugins"
 	"github.com/rayorole/orole-os-desktop/internal/policy"
 	"github.com/rayorole/orole-os-desktop/internal/projects"
+	"github.com/rayorole/orole-os-desktop/internal/sandbox"
 	"github.com/rayorole/orole-os-desktop/internal/skills"
 	"github.com/rayorole/orole-os-desktop/internal/systemmetrics"
 	"github.com/rayorole/orole-os-desktop/internal/terminals"
@@ -67,8 +68,19 @@ type Daemon struct {
 	// ChatMemory is the chat memory subsystem attached to Chat (svc_chat_memory.go).
 	ChatMemory *memory.Store
 	// Jarvis places and takes the owner's phone calls for bots (svc_jarvis.go).
-	Jarvis  *jarvis.Service
-	Metrics *systemmetrics.Sampler
+	Jarvis *jarvis.Service
+	// Sandbox runs one local VM per bot (svc_sandbox.go). sandboxLife is the lifetime of its background setup,
+	// downloads, deletes and startup sweep (sandboxStart); sandboxStop ends them and sandboxWG waits for them;
+	// sandboxClosing (under sandboxMu) refuses new ones once shutdown began. sandboxStore is its table.
+	Sandbox        *sandbox.Manager
+	sandboxLife    context.Context
+	sandboxStop    context.CancelFunc
+	sandboxStart   func()
+	sandboxMu      sync.Mutex
+	sandboxClosing bool
+	sandboxWG      sync.WaitGroup
+	sandboxStore   *sandbox.Store
+	Metrics        *systemmetrics.Sampler
 	// Skills is the central skill registry and Gateway the MCP gateway hub behind the
 	// `orole-daemon mcp-gateway` processes (svc_skills.go). gatewayExe is this executable.
 	Skills     *skills.Store
@@ -143,6 +155,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.agentsStart != nil {
 		d.agentsStart()
 	}
+	if d.sandboxStart != nil {
+		d.sandboxStart() // deletes computers of archived bots: only once this daemon owns the endpoint
+	}
 	if d.Automations != nil {
 		if err := d.Automations.Start(ctx); err != nil {
 			d.cleanup(ln)
@@ -186,6 +201,7 @@ func (d *Daemon) cleanup(ln interface{ Close() error }) {
 	if d.Chat != nil {
 		d.Chat.Close()
 	}
+	d.shutdownSandbox() // after Chat.Close: no bot turn uses a computer any more; before DB.Close: the Store writes on stop
 	if d.Plugins != nil {
 		d.Plugins.Close()
 	}

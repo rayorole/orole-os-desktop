@@ -36,6 +36,7 @@ func (d *Daemon) registerServices() {
 	d.registerPublish()
 	d.registerDictation()   // local speech recognition; independent of the other services
 	d.registerCLIRuntimes() // before registerLLM: the CLI providers resolve through d.CLI
+	d.registerSandbox()     // before registerChat: archiving a bot deletes its computer; phase 3 tools read d.Sandbox
 	d.registerLLM()         // first of the chat services: registerChat resolves providers through d.LLM
 	d.registerChat()        // after registerLLM; registerChatMemory and registerChatTools attach to d.Chat
 	d.registerChatMemory()  // after registerChat: memory, knowledge and skill proposals; before registerChatTools

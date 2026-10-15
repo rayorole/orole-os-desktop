@@ -1,0 +1,119 @@
+name: guest-image
+
+# Tag guest-v<guest/VERSION> (or run manually) -> build the NixOS bot computer image from guest/flake.nix (kernel,
+# initrd, kernel command line, compressed qcow2 base disk) and upload it with SHA256SUMS to a DRAFT release. A human
+# reviews and publishes the draft; Orole downloads only files whose hashes are pinned in
+# internal/sandbox/pins.go (scripts/sandbox-pins.ps1).
+# A manual run (workflow_dispatch) needs no tag: the draft targets the dispatched commit and the tag
+# guest-v<guest/VERSION> is created when the draft is published.
+# The build outputs and the build log are also kept as a regular Actions artifact (14 days) so a failed or
+# suspicious run can be inspected.
+on:
+  push:
+    tags: ["guest-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guest-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write # the draft release and its uploads
+    env:
+      GH_TOKEN: ${{ github.token }}
+    # `shell: bash` makes GitHub run every step with `bash --noprofile --norc -eo pipefail`, so a failing command
+    # in a pipeline (nix build | tee) fails the step.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Tag matches guest/VERSION
+        run: |
+          want="guest-v$(tr -d '[:space:]' < guest/VERSION)"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$want" ]; then
+            echo "tag $GITHUB_REF_NAME does not match guest/VERSION ($want)"
+            exit 1
+          fi
+          echo "RELEASE_TAG=$want" >> "$GITHUB_ENV"
+      - name: Let the image build use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+        with:
+          extra_nix_config: |
+            system-features = nixos-test benchmark big-parallel kvm
+      - name: Build the image
+        id: build
+        run: |
+          # bash runs with pipefail, so nix's exit status survives the tee.
+          nix build ./guest#image --print-build-logs --out-link result 2>&1 | tee build.log
+      - name: Show hash mismatches (build failed)
+        if: failure() && steps.build.outcome == 'failure'
+        run: |
+          # A stale vendorHash (guest/orole-guest.nix) or flake input hash shows up as "specified: ... got: ...".
+          if [ -f build.log ] && grep -qE 'hash mismatch|specified:|got: ' build.log; then
+            echo "::error title=Nix hash mismatch::update the hash named below (vendorHash in guest/orole-guest.nix, or run 'nix flake lock ./guest')"
+            grep -E -B2 -A3 'hash mismatch|specified:|got: ' build.log | head -60
+          else
+            echo "no hash mismatch lines in build.log; see the Build the image step"
+          fi
+      - name: Hashes and the 2 GiB asset limit
+        run: |
+          mkdir out
+          cp -L result/vmlinuz result/initrd result/cmdline result/base.qcow2 result/SHA256SUMS out/
+          cd out
+          sha256sum -c SHA256SUMS
+          for f in vmlinuz initrd cmdline base.qcow2; do
+            size=$(stat -c %s "$f")
+            echo "$f: $size bytes"
+            if [ "$size" -ge 2147483648 ]; then
+              echo "$f is over GitHub's 2 GiB release asset limit"
+              exit 1
+            fi
+          done
+      - name: Keep the outputs for inspection
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: guest-image-${{ github.run_id }}
+          path: |
+            out/
+            build.log
+          if-no-files-found: ignore
+          retention-days: 14
+          compression-level: 0
+      - name: Create the draft release
+        run: |
+          tag="$RELEASE_TAG"
+          version="${tag#guest-v}"
+          # `gh release view <tag>` does not find drafts, so list them too (limit above the repo's release count).
+          existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName,isDraft --jq ".[] | select(.tagName == \"$tag\") | .tagName")
+          if [ -n "$existing" ]; then
+            echo "release $tag exists (published or draft); refusing to replace its files"
+            exit 1
+          fi
+          # A tag push already has its tag; a manual run targets the dispatched commit instead.
+          where=(--target "$GITHUB_SHA")
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then where=(--verify-tag); fi
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft "${where[@]}" --prerelease --latest=false \
+            --title "Bot computer image $version" \
+            --notes "NixOS guest image for the bot computer, built from guest/flake.nix at this tag." \
+            out/vmlinuz out/initrd out/cmdline out/base.qcow2 out/SHA256SUMS
+      - name: Draft ready, publish manually
+        run: |
+          cmd="gh release edit $RELEASE_TAG --draft=false --latest=false"
+          echo "::notice title=Draft release $RELEASE_TAG is ready::Review it, then publish with: $cmd"
+          printf 'Draft release **%s** is ready. Review it, then publish with:\n\n`%s`\n' "$RELEASE_TAG" "$cmd" >> "$GITHUB_STEP_SUMMARY"

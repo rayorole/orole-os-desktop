@@ -43,8 +43,8 @@ func TestDeleteWhileRunning(t *testing.T) {
 	}
 	select {
 	case err := <-errc:
-		if !errors.Is(err, errDeleting) {
-			t.Fatalf("in-flight Exec = %v, want errDeleting", err)
+		if !errors.Is(err, ErrDeleting) {
+			t.Fatalf("in-flight Exec = %v, want ErrDeleting", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("in-flight Exec never returned")
@@ -73,8 +73,8 @@ func TestDeleteWhileBooting(t *testing.T) {
 		t.Fatalf("Delete returned %v while the VM was still booting", err)
 	case <-time.After(100 * time.Millisecond):
 	}
-	if _, err := h.m.Ensure(ctx, "bot1"); !errors.Is(err, errDeleting) {
-		t.Fatalf("Ensure during Delete = %v, want errDeleting", err)
+	if _, err := h.m.Ensure(ctx, "bot1"); !errors.Is(err, ErrDeleting) {
+		t.Fatalf("Ensure during Delete = %v, want ErrDeleting", err)
 	}
 	h.b.update(func(b *fakeBackend) { close(b.hold) })
 	if err := <-deleted; err != nil {
@@ -84,8 +84,8 @@ func TestDeleteWhileBooting(t *testing.T) {
 	if r.err != nil {
 		t.Fatalf("the waiting Ensure = %v; it should get the guest that booted", r.err)
 	}
-	if _, err := r.g.Health(ctx); !errors.Is(err, errDeleting) {
-		t.Fatalf("using the deleted guest = %v, want errDeleting", err)
+	if _, err := r.g.Health(ctx); !errors.Is(err, ErrDeleting) {
+		t.Fatalf("using the deleted guest = %v, want ErrDeleting", err)
 	}
 	if _, err := os.Stat(h.paths.Overlay("bot1")); !os.IsNotExist(err) {
 		t.Fatalf("overlay still there: %v", err)

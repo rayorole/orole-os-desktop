@@ -41,9 +41,12 @@ func (a *Agent) exec(parent context.Context, req wire.ExecRequest) (wire.ExecRes
 	argv := append(slices.Clone(a.cfg.Shell), req.Command)
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = a.resolve(req.Cwd)
-	cmd.Env = append(os.Environ(), "HOME="+a.cfg.Home)
+	cmd.Env = identityEnv(os.Environ(), a.cfg.Home, a.cfg.RunAs)
 	cmd.WaitDelay = waitDelay
 	setProcessGroup(cmd)
+	if err := setIdentity(cmd, a.cfg.RunAs); err != nil {
+		return wire.ExecResult{}, err
+	}
 	out := newCapped(wire.MaxExecOutput)
 	stdout, stderr := out.writer(), out.writer()
 	cmd.Stdout, cmd.Stderr = stdout, stderr
@@ -59,6 +62,16 @@ func (a *Agent) exec(parent context.Context, req wire.ExecRequest) (wire.ExecRes
 	}
 	res.ExitCode = cmd.ProcessState.ExitCode()
 	return res, nil
+}
+
+// identityEnv is the environment for a guest command: base plus HOME and, when it runs as another user, that
+// user's USER and LOGNAME. Later entries win (os/exec drops earlier duplicates).
+func identityEnv(base []string, home string, id *Identity) []string {
+	env := append(slices.Clone(base), "HOME="+home)
+	if id != nil {
+		env = append(env, "USER="+id.Name, "LOGNAME="+id.Name)
+	}
+	return env
 }
 
 // resolve maps a guest path: empty is home, relative is under home, absolute is kept (the VM is the boundary).

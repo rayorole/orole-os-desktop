@@ -62,11 +62,15 @@ var (
 	ErrBusy       = errors.New("sandbox: all computers are busy, try again shortly")
 	ErrLowMemory  = errors.New("sandbox: not enough free memory to start the computer")
 	ErrTakenOver  = errors.New("sandbox: the user is controlling the computer")
+	// ErrDeleting: the computer is being deleted; Ensure and a second Delete fail with it meanwhile.
+	ErrDeleting = errors.New("sandbox: the computer is being deleted")
+	// ErrImageGone: the image version the bot's disk was made from is no longer installed. The disk is a delta
+	// on that version's base image, so it is not booted against another one.
+	ErrImageGone = fmt.Errorf("%w: the image version this computer's disk was made from is no longer installed", ErrBootFailed)
 )
 
 var (
 	errStopped    = errors.New("sandbox: the computer was stopped")
-	errDeleting   = errors.New("sandbox: the computer is being deleted")
 	errClosed     = errors.New("sandbox: the app is shutting down")
 	errNotRunning = errors.New("sandbox: the computer is not running")
 )

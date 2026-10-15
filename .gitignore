@@ -25,3 +25,6 @@ mygo-update.pub
 # cloudflare relay
 relay/node_modules/
 relay/.wrangler/
+
+# nix build output links of the guest image flake
+/guest/result*

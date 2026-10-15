@@ -70,6 +70,7 @@ func (d *Daemon) registerChat() {
 		err := m.ArchiveBot(ctx, p.ID)
 		if err == nil {
 			d.audit("chat.bot.delete", p.ID, "allowed", "Bot archived")
+			d.deleteBotComputer(p.ID)
 		}
 		return none{}, chatError(err)
 	})

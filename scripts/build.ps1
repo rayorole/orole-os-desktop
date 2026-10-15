@@ -2,7 +2,7 @@
 .SYNOPSIS
   Builds orole-daemon.exe into build\ (a mygo resource) and then the packaged app + NSIS installer.
 .PARAMETER DaemonOnly
-  Build only build\orole-daemon.exe and build\orole.exe (the CLI), skipping the frontend and installer.
+  Build only build\orole-daemon.exe, build\orole.exe (the CLI) and build\orole-sandbox-setup.exe (the elevated setup helper), skipping the frontend and installer.
 .PARAMETER Version
   Version stamped into the binaries (default: version in mygo.json).
 .PARAMETER Upload
@@ -26,11 +26,19 @@ $null = New-Item -ItemType Directory -Force build
 # -H windowsgui is NOT used for the daemon: it must stay a console-subsystem binary so
 # `orole-daemon -stderr` works; it is launched with CREATE_NO_WINDOW by the app and the CLI.
 $ld = "-s -w -X github.com/rayorole/orole-os-desktop.Version=$Version"
-go build -trimpath -ldflags $ld -o build\orole-daemon.exe ./cmd/daemon
+# The sandbox setup helper is GUI-subsystem so its UAC-elevated run never flashes a console; it is a mygo
+# resource next to orole-daemon.exe, which finds it there (sandbox.SetupHelperPath). It is built first: the
+# daemon embeds its SHA-256 and refuses to elevate any other file (the per-user install folder is writable).
+# If mygo.json ever enables Windows code signing, signing rewrites the helper after this hash: the check must
+# then move to the Authenticode digest (which excludes the signature) or the helper must be signed here first.
+go build -trimpath -ldflags "$ld -H windowsgui" -o build\orole-sandbox-setup.exe ./cmd/orole-sandbox-setup
+if ($LASTEXITCODE) { throw "sandbox setup helper build failed" }
+$helperSHA = (Get-FileHash build\orole-sandbox-setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+go build -trimpath -ldflags "$ld -X github.com/rayorole/orole-os-desktop/internal/sandbox.SetupHelperSHA256=$helperSHA" -o build\orole-daemon.exe ./cmd/daemon
 if ($LASTEXITCODE) { throw "daemon build failed" }
 go build -trimpath -ldflags $ld -o build\orole.exe ./cmd/orole-cli
 if ($LASTEXITCODE) { throw "cli build failed" }
-Write-Host "built build\orole-daemon.exe and build\orole.exe ($Version)"
+Write-Host "built build\orole-daemon.exe, build\orole.exe and build\orole-sandbox-setup.exe ($Version)"
 if ($DaemonOnly) { return }
 
 # mygo runs buildCommand (frontend build), compiles cmd/desktop, bundles the `resources`

@@ -19,6 +19,25 @@ Keyboard and tooltip compositions follow the [coss Kbd](https://coss.com/ui/docs
 and [coss Tooltip](https://coss.com/ui/docs/components/tooltip) contracts using the
 already attributed local primitives. The custom `components/tip.tsx` layer was removed.
 
+### Bot computer: QEMU and the guest image (downloaded at runtime, not in the repository)
+
+Nothing here is committed to the repository. The daemon downloads both from this repository's GitHub releases and
+pins every file by size and SHA-256 in `internal/sandbox/pins.go`. The releases are drafts until the owner publishes them.
+
+| Upstream | Orole artifact | Modification |
+|---|---|---|
+| QEMU for Windows, `qemu-w64-setup-20260811.exe` from https://qemu.weilnetz.de/w64/ (SHA-512 `5bcf9eed634e8575a37b74f445af41a2fe4106da512d0c30c368301d4c105037fdfab40a5287367a28a957624cddebbc8c07e16c88ab6634f554cdf3d16bf543`), GPL-2.0 (QEMU) and the licences of its bundled DLLs | release asset `qemu-v20260811/qemu-20260811-win64.zip` | none: a subset of the installer's files (`qemu-system-x86_64.exe`, `qemu-img.exe`, DLLs, `share/*.bin`, `share/*.rom`, the `COPYING*`, `LICENSE*` and `README*` files) repackaged by `.github/workflows/qemu-asset.yml`; the zip includes `SOURCE.txt` |
+| NixOS / nixpkgs revision `55bfb4d7437bd4e09ab7cba58a43bd68eb310044` (`guest/flake.lock`; nixpkgs is MIT, packages keep their own licences: Linux GPL-2.0, Chromium BSD-3-Clause and others, cage MIT, wayvnc ISC) | release assets `guest-v0.1.1/{vmlinuz,initrd,cmdline,base.qcow2,SHA256SUMS}` built from `guest/` | configuration only (`guest/configuration.nix`, `guest/orole-guest.nix`); no package sources modified. `orole-guest` is Orole's own code |
+
+**GPL source availability.** QEMU (GPL-2.0) and the guest image (Linux and other GPL packages) are distributed as
+binaries. QEMU: `SOURCE.txt` inside the zip names the exact installer build and points to
+https://gitlab.com/qemu-project/qemu and https://qemu.weilnetz.de/, and the licence files are in the zip. Guest
+image: the corresponding source is every package source of nixpkgs revision `55bfb4d7437bd4e09ab7cba58a43bd68eb310044`
+(https://github.com/NixOS/nixpkgs/tree/55bfb4d7437bd4e09ab7cba58a43bd68eb310044), which together with `guest/` and
+`docs/development/guest-image.md` rebuilds the image. Before the owner publishes the draft releases, the release notes
+should repeat this revision and the SOURCE.txt pointer, and the licence texts of the image's packages
+(`nix path-info` / the closure's `share/doc` licence files) should be checked for a notice that must ship with it.
+
 ### DiceBear bot avatars
 
 `@dicebear/core` and `@dicebear/styles` (npm, MIT) generate the bot avatars in `frontend/src/lib/botAvatar.ts`

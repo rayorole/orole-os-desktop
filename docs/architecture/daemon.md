@@ -103,6 +103,13 @@ Event `jarvis.changed` carries the `StatusView` when the relay connects or drops
 rules change. `settings.set` refuses the `jarvis` and `jarvis.state` keys. The bot tools (`jarvis_rule_*`, `call_owner`,
 `switch_bot`) go through the same service, scoped to the calling bot.
 
+### Bot computers (`svc_sandbox.go`, `internal/sandbox`)
+
+One local VM per bot (`bot-computer.md`). `registerSandbox` runs before `registerChat`: archiving a bot deletes its
+computer. IPC `sandbox.availability`, `sandbox.status`, `sandbox.setup.enable` (one UAC prompt for Windows Hypervisor
+Platform, user only) and `sandbox.runtime.install` (background download, user only); events `sandbox.status`,
+`sandbox.availability`, `sandbox.runtime`, `sandbox.setup`. VMs stop on daemon exit; disks survive.
+
 ## Operating it
 
 ```

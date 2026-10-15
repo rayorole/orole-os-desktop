@@ -12,9 +12,13 @@ Steps (`scripts/build.ps1`):
 2. `go build ... -o build\orole.exe ./cmd/orole-cli` (the CLI; not part of the installer today)
 3. `go tool mygo build`: runs `buildCommand` (`bun run --cwd frontend build`), compiles `cmd/desktop` for
    windows/amd64 with the icon from `resources/icon.png`, copies `resources` from `mygo.json`
-   (`build/orole-daemon.exe`), and builds the NSIS installer (NSIS 3.13 downloaded by mygo on first use).
+   (`build/orole-daemon.exe`, `build/orole-sandbox-setup.exe`), and builds the NSIS installer (NSIS 3.13
+   downloaded by mygo on first use).
+   - `build/orole-sandbox-setup.exe` (from `cmd/orole-sandbox-setup`, built `-H windowsgui`): the only binary
+     Orole ever runs elevated. The daemon starts it with a UAC prompt to enable Windows Hypervisor Platform for
+     the bot computer. It sits next to `orole-daemon.exe` in the installed resources folder.
 
-`-DaemonOnly` stops after step 2 (needed by `scripts/measure-daemon.ps1`).
+`-DaemonOnly` stops after step 2 (which also builds the setup helper) (needed by `scripts/measure-daemon.ps1`).
 
 The daemon must exist before step 3 or the resource copy fails; that ordering is why `go tool mygo build` alone is
 not enough on a clean checkout.

@@ -65,6 +65,22 @@ Bots with full permissions can phone the owner and be phoned (`docs/architecture
 
 Calls and rules are audited; secrets, transcripts and spoken text are never logged (timings only).
 
+## Bot computers (local VMs)
+
+Each chat bot can have its own Linux VM (`docs/architecture/bot-computer.md`).
+
+| Threat | Control | Gap / accepted risk |
+|---|---|---|
+| Bot code escapes to the host | a hardware VM per bot (QEMU on Windows Hypervisor Platform); the guest sees only its own disk and no host folder is shared; commands, terminals and file access run as the unprivileged `bot` user without sudo, and the daemon is never elevated | a QEMU or hypervisor escape is out of scope; the pinned QEMU build is only as current as the release the owner publishes |
+| Another local user or process reaches the guest channel | one AF_UNIX socket per VM in `<data>\sandbox\run\`, which has an explicit protected DACL (user and SYSTEM); QEMU connects to the daemon and nothing listens on a network interface; every request carries a fresh 32-byte per-boot token that exists only in daemon memory, a user-only file deleted once QEMU has read it, and the guest's root-only sysfs file | same-user malware can read what the user can (see trust boundary 2); the token is also visible to guest root |
+| The guest reaches host services or the home network | user-mode NAT with open internet. **The guest can reach the home network** (router, NAS, printers, other PCs). Host loopback via 10.0.2.2 and fec0::2 is rejected by nftables for the `bot` user, so host services on loopback are unreachable from bot code (the daemon's IPC is a per-user named pipe and never listens on loopback or any network interface) | guest root (only `orole-guest`) could remove the rule; there is no egress allowlist yet |
+| Guest output steers the bot (prompt injection) | everything from a guest (command output, files, page text) is untrusted data: sizes are capped again on the host and phase 3 wraps results as `ToolResult{Untrusted: true}` | same limits as the prompt-injection rule below |
+| Elevation abused | only `orole-sandbox-setup.exe`, once, through UAC, to enable a Windows feature. It accepts one fixed argument, refuses to run unelevated and runs `System32\Dism.exe` by full path. The daemon opens it before the elevated start (refusing a reparse point, denying writes) and checks its SHA-256 against the hash embedded at build time; a build without the hash, or a mismatch, refuses | the hash protects against replacement after install, not against a tampered build |
+| Tampered QEMU or guest image | files come from this repository's GitHub releases and are checked against sizes and SHA-256 values compiled into Orole, while streaming, before they are moved into place; releases are drafts until the owner publishes them | whoever controls the repository's release process before the pin is generated; the pinned hashes are not independently signed |
+| VM outlives the daemon, or runs away | QEMU runs in a job object with kill-on-close; at most 4 VMs, 2048 MB and 2 vCPU each, 15-minute idle stop, a boot is refused when free RAM is low | a daemon killed by the OS leaves no VM, but a running command is lost |
+| Secrets in logs | the token is never in QEMU's argv, the kernel command line or the console log (checked); logged command lines go through `redactArgs` | none known |
+| Not covered yet | egress allowlist, credential sentinels, wiping saved browser logins (later phases) | |
+
 ## Prompt injection
 
 Rule: **external content is data, never instructions.** Concretely, for every module that feeds text to an LLM or to
