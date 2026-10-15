@@ -131,11 +131,23 @@ Bots with Jarvis mode on can speak on the phone (`docs/architecture/jarvis.md`).
 ## Tools
 - Hosted: OpenRouter `openrouter:web_search` / `web_fetch` / `datetime`, OpenAI `web_search`. A tool is offered only
   when the provider+model can run it; `chat.tools.list` returns `available` plus a reason and what leaves the machine.
-- Client: `fetch_url` (fallback), `research`, MCP tools, `orole_get_skill`, memory tools, `ask_bot`, automation tools.
+- Client: `fetch_url` (fallback), `research`, MCP tools, `orole_get_skill`, memory tools, `ask_bot`, automation tools,
+  and for bots with a computer `computer_run`, `computer_read_file`, `computer_write_file`, `browser_open`,
+  `browser_click`, `browser_type`, `browser_read`, `browser_screenshot` and `ask_user_to_take_over`
+  (see [bot-computer.md](bot-computer.md)).
+- Tool images: a tool may return `ToolResult.Images` (PNG/JPEG/GIF/WebP, at most `MaxToolImageBytes` each,
+  `MaxToolImages` per step). A vision model gets them in a transient user message after the tool results, for the
+  latest step only; they are never stored.
 - MCP and policy: a bot is given whole MCP servers (`BotConfig.MCPServers`, shown as Integrations / MCP in the bot settings) and
   may call every tool of each connected server except those the user set to "deny" in Settings > Integrations (at most 128
   tools per model call; the user prunes with per-tool permissions). Calls use actor `bot:<id>` and the existing approval flow.
   Migration `0099` turned the former per-tool allow-list `mcpTools` (`<serverId>/<tool>`) into the servers it named.
+
+## Bot computer
+`BotConfig.computer` (settings: "Has its own computer") gives a bot its own local Linux VM with terminal and browser
+tools and `ask_user_to_take_over`, which pauses the turn until the user hands the computer back. Such bots default to
+30 steps and 60 tool calls, and the observation tools are exempt from the repeated-call guard. Details, the policy
+action table and the takeover flow: [bot-computer.md](bot-computer.md).
 
 ## Memory
 Scopes: `bot:<id>` (private), `user`, `shared:<name>`. A bot reads/writes its own scope and any granted scope

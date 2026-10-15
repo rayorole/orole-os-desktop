@@ -12,7 +12,7 @@ buildGo127Module {
       (f: f.hasExt "go" || f.name == "go.mod" || f.name == "go.sum" || f.name == "mygo.json")
       src;
   };
-  vendorHash = "sha256-zXOxVCCy6WftvQ9o1bxJ8t4TXa06/PYhDOI8IEmqASs=";
+  vendorHash = "sha256-Yj2iRtg824B05/65ibIlX7BLRqmtilPTbGaZLhZxz9s=";
   subPackages = [ "cmd/orole-guest" ];
   env.CGO_ENABLED = "0";
   ldflags = [ "-s" "-w" "-X main.version=${version}" ];

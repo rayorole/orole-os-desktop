@@ -625,6 +625,7 @@ func portableInput(in BotInput) BotInput {
 	in.Config.Skills = nil
 	in.Config.Executive = false
 	in.Config.CodeTasks = false
+	in.Config.Computer = false
 	in.Config.Memory = nil
 	in.Config.ToolAccess = ""
 	in.Config.Tasks = BotTaskDefaults{}

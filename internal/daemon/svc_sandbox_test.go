@@ -52,6 +52,18 @@ func TestSandboxIPCReportsAvailabilityAndStatus(t *testing.T) {
 	if err := c.Call(ctx, "sandbox.status", map[string]string{}, &st); err == nil {
 		t.Fatal("status without botId must be refused")
 	}
+
+	// The takeover methods are wired: nothing waits, a stopped computer cannot be taken over, Done is harmless.
+	var h sandbox.HandoffState
+	if err := c.Call(ctx, "sandbox.handoff", map[string]string{"botId": "no-such-bot"}, &h); err != nil || h.Pending || h.BotID != "no-such-bot" {
+		t.Fatalf("handoff %+v %v", h, err)
+	}
+	if err := c.Call(ctx, "sandbox.takeover", map[string]string{"botId": "no-such-bot"}, nil); err == nil || !strings.Contains(err.Error(), "not running") {
+		t.Fatalf("take over a stopped computer: %v", err)
+	}
+	if err := c.Call(ctx, "sandbox.release", map[string]string{"botId": "no-such-bot", "note": "done"}, nil); err != nil {
+		t.Fatalf("release: %v", err)
+	}
 }
 
 func TestSandboxSetupAndInstallFailCleanlyInTests(t *testing.T) {

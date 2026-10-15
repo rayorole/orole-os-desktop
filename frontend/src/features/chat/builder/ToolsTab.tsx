@@ -1,5 +1,5 @@
 import { useId, type Dispatch, type ReactNode } from "react";
-import { Globe, ScrollText, SquareTerminalIcon } from "lucide-react";
+import { Globe, MonitorIcon, ScrollText, SquareTerminalIcon } from "lucide-react";
 import { Chat, MCP, Skills, type ChatToolInfo, type ServerState, type Skill } from "@/mygo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -173,6 +173,7 @@ export function ToolsPage({ form, dispatch }: { form: FormState; dispatch: Dispa
     <div className="flex flex-col gap-3">
       <div className="overflow-hidden rounded-xl border bg-card/60">
         <SwitchRow icon={SquareTerminalIcon} label="Runs code tasks" hint="Starts coding agents in your projects, follows their progress and tells you when they finish or need you. Your settings decide whether a start waits for your approval, and which agent, model and permission mode it uses." checked={form.codeTasks} onChange={(codeTasks) => dispatch({ type: "patch", patch: { codeTasks } })} />
+        <SwitchRow icon={MonitorIcon} label="Has its own computer" hint="A private Linux computer on this PC with a terminal and a browser you can watch and take over. It starts when the bot first uses it and can reach the internet and your home network." checked={form.computer} onChange={(computer) => dispatch({ type: "patch", patch: { computer } })} />
       </div>
       {tools.error && (
         <Alert variant="error"><AlertDescription className="flex items-center justify-between gap-2"><span className="selectable break-words">{tools.error}</span><Button size="xs" variant="outline" onClick={tools.reload}>Retry</Button></AlertDescription></Alert>

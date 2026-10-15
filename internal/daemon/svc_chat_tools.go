@@ -57,6 +57,13 @@ func (d *Daemon) registerChatTools() {
 	}
 	list = append(list, tools.Jarvis{Runtime: jarvisTools{d}}) // reads d.Jarvis lazily: registerJarvis runs after this
 	m.AddPromptSection(tools.JarvisPrompt)
+	// The bot computer: computerRuntime reads d.Sandbox per call (nil answers "not set up"); m refuses archived bots.
+	computer := computerRuntime{d: d, bots: m}
+	if d.Policy != nil {
+		list = append(list, tools.Computer{Runtime: computer, Policy: d.Policy}, tools.Browser{Runtime: computer, Policy: d.Policy})
+	}
+	list = append(list, tools.Takeover{Runtime: computer})
+	m.AddPromptSection(tools.ComputerPrompt)
 	list = append(list, tools.Show{})
 	m.AddPromptSection(func(chat.Bot) string { return tools.ShowPrompt })
 	list = append(list, &tools.Setup{Bots: m})

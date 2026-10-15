@@ -35,6 +35,8 @@ func main() {
 	if err := guestUser(&cfg); err != nil {
 		logger.Fatal(err)
 	}
+	guestBrowser(&cfg)
+	guestScreen(&cfg)
 	agent := guestagent.New(cfg)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

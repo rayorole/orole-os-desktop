@@ -107,8 +107,11 @@ rules change. `settings.set` refuses the `jarvis` and `jarvis.state` keys. The b
 
 One local VM per bot (`bot-computer.md`). `registerSandbox` runs before `registerChat`: archiving a bot deletes its
 computer. IPC `sandbox.availability`, `sandbox.status`, `sandbox.setup.enable` (one UAC prompt for Windows Hypervisor
-Platform, user only) and `sandbox.runtime.install` (background download, user only); events `sandbox.status`,
-`sandbox.availability`, `sandbox.runtime`, `sandbox.setup`. VMs stop on daemon exit; disks survive.
+Platform, user only) and `sandbox.runtime.install` (background download, user only), and the desktop-only takeover methods `sandbox.takeover`,
+`sandbox.release` and `sandbox.handoff` (`computer_tools.go`); events `sandbox.status`, `sandbox.availability`,
+`sandbox.runtime`, `sandbox.setup`, `sandbox.handoff`. The bot tools (`computer_run`, `browser_*`,
+`ask_user_to_take_over`) run through `computerRuntime`; a pending takeover keeps a "Needs you" notification open.
+VMs stop on daemon exit; disks survive.
 
 ## Operating it
 

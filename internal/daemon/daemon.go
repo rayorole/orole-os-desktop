@@ -80,7 +80,14 @@ type Daemon struct {
 	sandboxClosing bool
 	sandboxWG      sync.WaitGroup
 	sandboxStore   *sandbox.Store
-	Metrics        *systemmetrics.Sampler
+	// handoffsOnce/handoffsSet hold the bots waiting for the user to take over their computer
+	// (ask_user_to_take_over; use d.handoffs()). takeoverMu orders the Take over and Done handlers with the start
+	// of a wait, so a wait sees whether the user holds the computer at the moment it registers.
+	handoffsOnce sync.Once
+	handoffsSet  *sandbox.Handoffs
+	takeoverMu   sync.Mutex
+
+	Metrics *systemmetrics.Sampler
 	// Skills is the central skill registry and Gateway the MCP gateway hub behind the
 	// `orole-daemon mcp-gateway` processes (svc_skills.go). gatewayExe is this executable.
 	Skills     *skills.Store

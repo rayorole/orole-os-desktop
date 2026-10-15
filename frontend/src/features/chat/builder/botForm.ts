@@ -35,6 +35,8 @@ export interface FormState {
   executive: boolean;
   /** May start, watch and steer code tasks (coding agents on this PC). */
   codeTasks: boolean;
+  /** Has its own local Linux computer (terminal and browser) the user can watch and take over. */
+  computer: boolean;
   /** Overrides the global "Bot tools" level (ToolAccess); "" uses the global setting. */
   toolAccess: string;
   /** Code-task overrides: "" uses the global setting, "auto" lets the bot choose (not for the permission mode). */
@@ -55,7 +57,7 @@ export interface FormState {
 /** A new bot starts with every built-in tool on; each can be switched off in its settings. */
 export const initialForm = (): FormState => ({
   name: "", avatar: "", color: "", description: "", instructions: "", model: "", reasoning: "",
-  tools: Object.values(TOOL_IDS), mcpServers: [], skills: [], memory: [], maxSteps: "", maxToolCalls: "", executive: false, codeTasks: false,
+  tools: Object.values(TOOL_IDS), mcpServers: [], skills: [], memory: [], maxSteps: "", maxToolCalls: "", executive: false, codeTasks: false, computer: false,
   toolAccess: "", taskHarness: "", taskModel: "", taskReasoning: "", taskPermissionMode: "",
   jarvisEnabled: false, jarvisPolicy: "", jarvisVoice: "", jarvisModel: "",
 });
@@ -102,6 +104,7 @@ export function formFromInput(bot: Pick<BotInput, "name" | "avatar" | "color" | 
     maxSteps: limit(config.limits?.maxSteps), maxToolCalls: limit(config.limits?.maxToolCalls),
     executive: config.executive ?? false,
     codeTasks: config.codeTasks ?? false,
+    computer: config.computer ?? false,
     toolAccess: config.toolAccess ?? "",
     taskHarness: config.tasks?.harness ?? "", taskModel: config.tasks?.model ?? "", taskReasoning: config.tasks?.reasoning ?? "", taskPermissionMode: config.tasks?.permissionMode ?? "",
     jarvisEnabled: config.jarvis?.enabled ?? false, jarvisPolicy: config.jarvis?.policy ?? "", jarvisVoice: config.jarvis?.voiceId ?? "", jarvisModel: config.jarvis?.ttsModel ?? "",
@@ -141,6 +144,7 @@ export function toInput(form: FormState, id: string): BotInput {
       limits: { maxSteps: integer(form.maxSteps), maxToolCalls: integer(form.maxToolCalls) },
       ...(form.executive ? { executive: true } : {}),
       ...(form.codeTasks ? { codeTasks: true } : {}),
+      ...(form.computer ? { computer: true } : {}),
       ...(form.toolAccess ? { toolAccess: form.toolAccess } : {}),
       ...(tasks ? { tasks } : {}),
       ...(Object.keys(jarvis).length > 0 ? { jarvis } : {}),

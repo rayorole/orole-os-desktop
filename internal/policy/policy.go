@@ -145,8 +145,11 @@ const SourceAutoApprove = "auto-approve"
 // the setting cannot be read, and must not call back into the Engine.
 type AutoApprove func(ctx context.Context, actor string) (max Effect, reason string)
 
+// MaxDetailBytes is how much of a Request's Detail the engine keeps and shows in an approval prompt
+// (untrusted.Text(Detail, MaxDetailBytes)). Callers that must show a detail whole keep it within this.
+const MaxDetailBytes = 2000
+
 const (
-	maxDetail   = 2000
 	maxPending  = 100
 	maxResource = 512
 )
@@ -344,7 +347,7 @@ func normalize(req Request) Request {
 	req.Actor = untrusted.Line(req.Actor, 128)
 	req.Action = untrusted.Line(req.Action, 128)
 	req.Resource = untrusted.Line(req.Resource, maxResource)
-	req.Detail = untrusted.Text(req.Detail, maxDetail)
+	req.Detail = untrusted.Text(req.Detail, MaxDetailBytes)
 	if req.Actor == "" {
 		req.Actor = "unknown"
 	}

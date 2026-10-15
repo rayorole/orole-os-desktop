@@ -116,7 +116,7 @@ func (g *Guest) openStream(ctx context.Context, path string) (*stream, error) {
 	return s, nil
 }
 
-// OpenScreen relays raw RFB bytes to the guest's VNC server (the guest side arrives in phase 4).
+// OpenScreen relays raw RFB bytes to the guest's VNC server (wayvnc on the guest's 127.0.0.1:5900).
 func (g *Guest) OpenScreen(ctx context.Context) (io.ReadWriteCloser, error) {
 	return g.openStream(ctx, "/screen")
 }

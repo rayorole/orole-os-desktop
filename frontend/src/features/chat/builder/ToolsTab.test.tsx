@@ -9,7 +9,7 @@ import type { ServerState, Skill } from "@/mygo";
 import { useUI } from "@/stores/ui";
 import { formReducer, initialForm, type FormState, type Problems } from "./botForm";
 import { bridge, resetBridge } from "./testing";
-import { ToolsTab } from "./ToolsTab";
+import { ToolsPage, ToolsTab } from "./ToolsTab";
 
 const server = (id: string, over: Partial<ServerState> = {}): ServerState => ({
   id, name: `Server ${id}`, url: `https://example.com/${id}`, transport: "http", adapter: "", enabled: true, authKind: "oauth", oauthClientId: "", scopes: "",
@@ -164,5 +164,24 @@ describe("skills", () => {
     bridge.skills.list.mockRejectedValue(new Error("no registry"));
     render(<Harness />);
     expect(await screen.findByText("no registry")).toBeInTheDocument();
+  });
+});
+
+function PageHarness({ initial }: { initial?: Partial<FormState> }) {
+  const [form, dispatch] = useReducer(formReducer, { ...initialForm(), tools: [], ...initial });
+  latest = form;
+  return <ToolsPage form={form} dispatch={dispatch} />;
+}
+
+describe("tools page", () => {
+  it("switches the bot's own computer on and off with one switch", async () => {
+    render(<PageHarness />);
+    const toggle = await screen.findByRole("switch", { name: "Has its own computer" });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    expect(latest.computer).toBe(true);
+    fireEvent.click(screen.getByRole("switch", { name: "Has its own computer" }));
+    expect(latest.computer).toBe(false);
+    expect(screen.getAllByRole("switch", { name: /computer/i })).toHaveLength(1);
   });
 });

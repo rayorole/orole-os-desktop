@@ -28,6 +28,7 @@ const sandboxReplyWait = 25 * time.Second
 // Manager timings; sandboxDeleteTimeout covers a delete that waits for a boot (BootTimeout) and then stops the VM.
 const (
 	sandboxBootTimeout   = 60 * time.Second
+	sandboxBusyWait      = 30 * time.Second
 	sandboxDeleteTimeout = sandboxBootTimeout + 2*time.Minute
 )
 
@@ -44,7 +45,8 @@ type sandboxSetupRun struct {
 //
 // IPC: sandbox.availability, sandbox.status{botId}, sandbox.setup.enable (one UAC prompt, audited),
 // sandbox.runtime.install (starts the background download, returns its state; calling it again while it runs
-// returns progress). Events: sandbox.status, sandbox.availability, sandbox.runtime, sandbox.setup.
+// returns progress), and the takeover methods (registerSandboxTakeover). Events: sandbox.status,
+// sandbox.availability, sandbox.runtime, sandbox.setup, sandbox.handoff.
 //
 // Setup and install are user actions: they run with the daemon's lifetime, not the request's, so closing the
 // window or a call timeout does not abort them, and report progress as events.
@@ -63,11 +65,13 @@ func (d *Daemon) registerSandbox() {
 			}
 		}})
 	m = sandbox.NewManager(sandbox.Config{
-		Paths: paths, MaxRunning: 4, IdleTimeout: 15 * time.Minute, BootTimeout: sandboxBootTimeout, BusyWait: 30 * time.Second,
+		Paths: paths, MaxRunning: 4, IdleTimeout: 15 * time.Minute, BootTimeout: sandboxBootTimeout, BusyWait: sandboxBusyWait,
 		FreeMemory: d.freeMemory, Now: time.Now, Image: rt.Image,
 	}, sandbox.NewHostBackend(rt, paths), d.sandboxStore)
 	d.Sandbox = m
 	m.Subscribe(func(s sandbox.Status) { d.IPC.Publish("sandbox.status", s) })
+	m.Subscribe(d.computerStatusChanged) // a takeover request ends when its computer stops
+	d.registerSandboxTakeover(managerHost{m})
 	// Run calls this once the daemon owns the IPC endpoint (a refused second daemon must not delete anything).
 	d.sandboxStart = func() { d.sandboxGo(func() { d.sweepBotComputers(paths) }) }
 

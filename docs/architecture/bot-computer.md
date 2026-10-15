@@ -1,14 +1,16 @@
 # Bot computer: a local VM per bot
 
-Every chat bot can have its own small Linux computer on the user's PC: its own disk, a terminal and (later) a
+Every chat bot can have its own small Linux computer on the user's PC: its own disk, a terminal and a
 visible browser. Design: `docs/superpowers/specs/2026-10-15-bot-computer-design.md`. Plans:
 `docs/superpowers/plans/2026-10-15-bot-computer*.md`.
 
-**Status: phase 2 (Windows backend).** The manager, store, guest protocol and `orole-guest` (phase 1) now run on
-a real QEMU backend on Windows, with the runtime download, the setup helper and the NixOS guest image, all
-checked end to end on build 22000 (see "Guest image checks"). The pinned release assets are drafts until the owner
-publishes them, so a user's build cannot download them yet (the pinned URLs answer 404). Nothing is visible in the
-app: bot tools come in phase 3, the Computer tab and its setup screens in phase 4.
+**Status: phase 3 (bot tools).** The manager, store, guest protocol and `orole-guest` run on a real QEMU backend
+on Windows, with the runtime download, the setup helper and the NixOS guest image, all checked end to end on build 22000
+(see "Guest image checks"). A bot with "Has its own computer" switched on gets terminal, file and browser tools and can
+ask the user to take over (see "Bot tools"). The pinned release assets are drafts until the owner publishes them, so a
+user's build cannot download them yet (the pinned URLs answer 404). What is visible in the app: the Tools switch, the
+card in chat and the "Needs you" notification. The Computer tab (screen, terminal, Take over and Done buttons) and its
+setup screens come in phase 4.
 
 **A bot's computer lives in the daemon: it survives GUI restarts, not a daemon exit or reboot. Its disk persists;
 running commands do not.**
@@ -16,7 +18,7 @@ running commands do not.**
 ## Architecture
 
 ```
- bot tool call (phase 3)
+ bot tool call (internal/chat/tools)
         |
  internal/sandbox.Manager ---- Store (table sandboxes)
         |  Ensure(bot) -> *Guest
@@ -57,7 +59,7 @@ running commands do not.**
 - Restarting `orole-guest` inside the VM makes the host treat the channel as dead; the next call reboots the VM.
 - A VM that is stopping keeps its overlay open, so `Ensure` waits for it to be gone before booting again.
 - `TakeOver`/`Release` hold the takeover lock in the daemon; while it is held the VM is never idle-stopped or
-  evicted, and (phase 3) bot browser tools are refused.
+  evicted, and bot browser tools are refused.
 - `Delete(bot)` stops the VM (calls in flight fail), then removes the overlay, the socket and the record. The log
   is kept.
 - `Shutdown` (daemon exit) stops every VM and refuses new ones.
@@ -76,11 +78,12 @@ memory; the guest answers 401 otherwise.
 | `POST /files/read`, `/files/write` | guest files with `bot`'s permissions (a helper process: `orole-guest` re-executed as `bot`); relative paths under `/home/bot`; 403 where `bot` may not read or write | read 4 MiB (`truncated`), write 16 MiB max |
 | `POST /pty?cols=&rows=` | login shell (bash) as `bot` on a pseudo-terminal it owns, full duplex; `X-Orole-Pty` id, `X-Orole-Exit` trailer | |
 | `POST /pty/resize` | resize by id | |
-| `POST /screen`, `POST /browser` | 501 until phases 3-4 | |
+| `POST /browser` | chromedp on the visible Chromium: open, click, type, read, screenshot (see "Bot tools"); 501 on an image without it | page load 60 s, other steps 20 s; page text 90 KiB, screenshot 5 MiB |
+| `POST /screen` | full-duplex relay to the guest's VNC server (the viewer is phase 4); 501 on an image without it | |
 | `POST /poweroff` | 202, then a clean power off | |
 
 The host never trusts the guest: answers over 8 MiB are refused, exec output is cut to 1 MiB and file content to
-4 MiB again on the host, and everything a bot receives from the guest is untrusted data (phase 3 wraps it).
+4 MiB again on the host, and everything a bot receives from the guest is untrusted data (the bot tools wrap it).
 
 ### Daemon wiring
 
@@ -140,6 +143,11 @@ gone the boot fails with `ErrImageGone` instead of booting the overlay against a
   host's loopback) except DHCP renewals from port 68, which only root can bind.
 - The guest has open internet and can reach the home network (printers, NAS, router pages, other PCs); only the host's
   own loopback is blocked, and only for `bot` (guest root could bypass it). Phase 4 states this in the UI.
+- Since image 0.1.3, nftables also rejects TCP connects from uid 1000 (`bot`: its commands, and Chromium's own pages)
+  to 127.0.0.0/8 and ::1 ports 9222 (Chromium DevTools) and 5900 (wayvnc). Only `orole-guest` (root) connects to them,
+  so the bot cannot drive the browser or read the screen around the tools' approvals and the takeover lock. Chromium,
+  cage and wayvnc still run as `bot`, so this closes the ports, not same-user access to those processes, their files
+  or the Wayland socket.
 
 ### Guest image
 
@@ -153,7 +161,7 @@ Facts later phases rely on: user `bot` (uid 1000, primary group `users` gid 100,
 locked password); root's password is locked too and there is no sshd, so the image has no login method at all
 (`users.allowNoPasswordLogin = true`; the debug image's serial-console autologin is the only way in); Chromium in cage
 (wlroots headless backend, pixman) with CDP on `127.0.0.1:9222` and its profile in `/home/bot/.config/orole-chromium`;
-wayvnc on `127.0.0.1:5900`; `orole-guest` as a root systemd unit after module loading, restarted forever;
+wayvnc on `127.0.0.1:5900` (from 0.1.3 only root can connect to either); `orole-guest` as a root systemd unit after module loading, restarted forever;
 `qemu_fw_cfg` loaded in the initrd; Python 3 + uv, Node.js, git, curl, jq, ripgrep; nix-ld and envfs so downloaded
 Linux binaries and `#!/bin/bash` scripts run; fontconfig with DejaVu and Noto for Chromium. `orole-guest` reads its token from fw_cfg
 (`/sys/firmware/qemu_fw_cfg/by_name/opt/orole/token/raw`) and falls back to `orole.token=` on the kernel command line.
@@ -161,37 +169,50 @@ Linux binaries and `#!/bin/bash` scripts run; fontconfig with DejaVu and Noto fo
 #### Guest image checks
 
 Run on 2026-10-15 on the developer PC (Windows 11 Pro 21H2, build 22000, Hyper-V running, 32 GB RAM, unelevated)
-with `TestRealGuestImageThroughTheManager` (`internal/sandbox/e2e_windows_test.go`): the pinned `guest-v0.1.1` and
+with `TestRealGuestImageThroughTheManager` (`internal/sandbox/e2e_windows_test.go`): the pinned `guest-v0.1.3` and
 `qemu-v20260811` assets (draft releases at the time, read with `gh`) installed through the real `Runtime` (size and
 SHA-256 against `DefaultPins`, unzip) from a local stand-in for the release server, then booted through the real
 `Manager` and host backend (`-accel whpx,kernel-irqchip=off`, 2048 MB, 2 vCPU). Every command below ran as `bot`
-through `orole-guest`. Two full runs on `guest-v0.1.0` and one on `guest-v0.1.1`, same results; times from the
-`guest-v0.1.1` run.
+through `orole-guest`. Two full runs on `guest-v0.1.0`, one on `guest-v0.1.1` and one on `guest-v0.1.2` (the first
+image with the browser and screen relay: `orole-guest` with chromedp v0.14.2), same results; times from the
+`guest-v0.1.2` run. A run on `guest-v0.1.3` (draft, Actions run 38740342706: the CDP/VNC firewall for `bot`, the
+password-field refusal and the attach deadline) passed every row again with similar times (boot 9.6 s, CDP up 4.1 s
+after ready) and the rows marked 0.1.3 below.
 
 | Check | Result |
 |---|---|
-| Boot to guest ready (`Manager.Ensure`, fresh overlay) | 8.1 s; `systemd-analyze`: 1.02 s kernel + 3.00 s initrd + 3.22 s userspace = 7.24 s |
-| Boot to ready again: clean restart / after a hard kill / a second bot | 7.6 s / 7.4 s / 7.9 s |
+| Boot to guest ready (`Manager.Ensure`, fresh overlay) | 8.1 s; `systemd-analyze`: 0.99 s kernel + 3.03 s initrd + 3.17 s userspace = 7.18 s |
+| Boot to ready again: clean restart / after a hard kill / a second bot | 7.6 s / 7.5 s / 7.8 s |
 | Clean shutdown (agent power-off, then QMP) | 1.8 s |
-| QEMU process RAM (host) | one bot: working set 503 MB, private 2130 MB; with two bots running: 1276 MB and 507 MB working set, 2418 MB and 2132 MB private (the guest touches its RAM lazily; private bytes are the 2 GB reservation) |
-| Guest memory (`free -m`) | 461 MB used of 1969 MB, idle with Chromium open |
+| QEMU process RAM (host) | one bot: working set 510 MB, private 2139 MB; with two bots running (the first after the browser checks): 1305 MB and 524 MB working set, 2136 MB and 2132 MB private (the guest touches its RAM lazily; private bytes are the 2 GB reservation) |
+| Guest memory (`free -m`) | 477 MB used of 1969 MB, idle with Chromium open |
 | `id -un` | `bot` |
 | Services (`systemctl is-active cage-tty1 wayvnc orole-guest`) | active, active, active |
-| Chromium CDP (`curl -s 127.0.0.1:9222/json/version`) | up 4.2 s after guest ready, `Chrome/155.0.8059.79` |
-| wayvnc (`ss -ltn`) | listening on `127.0.0.1:5900` only, 33 ms after guest ready |
+| Chromium CDP (`curl -s 127.0.0.1:9222/json/version`; from 0.1.3 `ss -ltn`, since bot can no longer connect) | up 3.2 s after guest ready, `Chrome/155.0.8059.79` |
+| 0.1.3: bot connects to `127.0.0.1:9222`, `[::1]:9222`, `127.0.0.2:9222` (curl, bash `/dev/tcp`) | refused (`curl` exit 7, `Connection refused`), no DevTools JSON |
+| 0.1.3: bot connects to `127.0.0.1:5900`, `[::1]:5900` (bash `/dev/tcp`; the image has no `nc`) | refused; `Guest.Browser` and `Guest.OpenScreen` (root `orole-guest`) still work in the same run |
+| wayvnc (`ss -ltn`) | listening on `127.0.0.1:5900` only, 46 ms after guest ready |
 | Fonts (`fc-list`) | 921 faces (DejaVu, Noto) |
 | fw_cfg token / channel device | `400 root` / `600 root`; `cat` of the token as bot fails |
 | Host loopback (`curl http://10.0.2.2:<port>` to a Go listener on the host's 127.0.0.1) | refused at once (`curl: (7)`, the nftables reject); the listener accepted nothing |
 | Internet (`curl -sI https://example.com`) | HTTP 200 |
 | Tools as bot | Python 3.14.7, Node v24.21.0, uv 0.13.0, git 2.55.0, `bash -c` works |
 | Disk (`df -h /`) | `/dev/vda` 9.8 G, 4.1 G used (ext4 grown to the 10 GB overlay on first boot) |
+| Browser `open https://example.com` (`Guest.Browser`, chromedp v0.14.2 attaching to the visible tab) | 0.50 s, title `Example Domain` (no CDP decode errors) |
+| Browser `read` / `screenshot` | 3 ms, text has example.com's paragraph (its 2026 page has no "Example Domain" heading and no link) / 160 ms, valid 1280x630 PNG, 59.8 KB |
+| Browser `click` on a missing target | 6 ms, `502: nothing visible on the page matches "#orole-missing"` |
+| Browser `click text=More information` (same-tab link on a page served from the guest's loopback) | 64 ms, the result already reports the new page |
+| Browser `click` on a `target=_blank` link | 137 ms; the result and the next `read` drive the new front tab |
+| 0.1.3: `type` into a text field / a password field (`#pw` and `text=Password`) | 62 ms, typed / refused in 2-7 ms: "that is a password field, and you never type passwords: call ask_user_to_take_over…" |
+| Screen relay (`Guest.OpenScreen`, wayvnc) | banner `RFB 003.008` 1 ms after opening; RFB 3.8 handshake with security None, framebuffer 1280x720 |
+| Long streams: `/screen` and `/pty` open and idle for 65 s | both still work (a FramebufferUpdate after the idle, a shell command echoes); the guest's `http2.Server` sets no timeouts and the host transport only pings (15 s read idle, 10 s ping timeout) |
 | File write through `/files/write` | owner `bot`; read back after a clean restart |
 | Hard kill (`TerminateProcess`, what the job object does), then boot on the same overlay | boots; a file written and `sync`ed before the kill is there; the manager reports the kill as a crash |
 | Two bots at once on one base image | both run; separate homes; `base.qcow2` size and mtime unchanged |
 | Guest tokens in the console logs (`sandbox-<bot>.log`) | none (3.2 KB and 0.8 KB of log) |
 | Test binary killed with `taskkill /F` mid-run (a crashed daemon; `guest-v0.1.0` run) | its QEMU was gone 3 s later (job object, kill on close) |
 
-Not checked here yet: input through wayvnc and glyphs on screen (phase 3, the screen relay), the NixOS report's
+Not checked here yet: input through wayvnc and glyphs on screen (phase 4, the viewer), the NixOS report's
 package criteria (numpy/pandas through uv, a native npm module, a downloaded Node binary through nix-ld).
 
 ### Testing
@@ -211,6 +232,123 @@ guest-v<version>` reads both releases (drafts too) with `gh`, takes each hash fr
 against GitHub's own asset digest, and writes the file. The pinned URLs
 (`https://github.com/rayorole/orole-os-desktop/releases/download/<tag>/<name>`) work for users only once both releases
 are published.
+
+## Bot tools (phase 3)
+
+A saved bot with `BotConfig.computer` (bot settings › Tools: "Has its own computer"; off by default, never exported)
+gets these tools (`internal/chat/tools/computer.go`, `browser.go`, `takeover.go`, wired in
+`internal/daemon/svc_chat_tools.go` through `computerRuntime` in `internal/daemon/computer_tools.go`). Builder drafts
+never get them, and neither do models without tool calling. Every call except `ask_user_to_take_over` goes through
+`policy.Engine` as `bot:<id>`, so the bot's tool access level (ask/read/write/all) and stored rules apply as for any
+other tool:
+
+| Tool | Action | Resource | Effect |
+|---|---|---|---|
+| `computer_run(command, timeout?, cwd?)` | `computer.exec` | `computer/<botID>` | write |
+| `computer_read_file(path)` | `computer.files.read` | `computer/<botID>/<absolute path>` | read |
+| `computer_write_file(path, content)` | `computer.files.write` | `computer/<botID>/<absolute path>` | write |
+| `browser_open(url)` | `computer.browser.open` | `computer/<botID>/browser/<host>` | **write** |
+| `browser_read()`, `browser_screenshot()` | `computer.browser.read` | `computer/<botID>/browser` | read |
+| `browser_click(target)`, `browser_type(target, text)` | `computer.browser.write` | `computer/<botID>/browser` | write |
+| `ask_user_to_take_over(reason)` | none (it only asks the user) | - | - |
+
+**Deviation from the plan table.** The plan listed `browser_open` as `computer.browser.read` on
+`computer/<botID>/browser`. Opening a page carries the user's logged-in sessions (the bot's browser keeps its
+profile), so an unprompted open followed by a read is a way to move data out. It is therefore a write, on a resource
+that names the host (lowercased, punycode, no port or user info): the user is asked once per new site and can choose
+"always allow" for that host only. `browser_read` and `browser_screenshot` stay reads.
+
+- **What the per-site approval covers.** Only the address the bot passes to `browser_open`. Links it clicks,
+  redirects, pages opened in new tabs and `computer_run` (curl, a script) can reach any other host without a new
+  prompt. Bots whose tool access is "read and change" or "everything" are never asked at all (the policy auto-approves
+  writes for them).
+- **`browser_open` refuses** (typed addresses only; a link or redirect to such an address is not checked) `localhost` and `*.localhost`, and literal loopback, private, link-local, CGNAT
+  (100.64.0.0/10), "this network" and unspecified IPs, including the VM's gateway 10.0.2.2, IPv6 forms that carry such
+  an IPv4 address (NAT64, 6to4, IPv4-compatible) and every spelling a browser would read as one (`127.1`, `0x7f.1`,
+  `2130706433`, fullwidth or ideographic-dot Unicode forms, IPv6 zones such as `%25eth0` and any number of trailing
+  dots; hosts are mapped with UTS-46 first). **Not caught:** a
+  public hostname whose DNS answer is a private address. The computer can reach the user's home network (the guest
+  firewall only blocks the host's own loopback), so the per-host approval is the guard there.
+- **Approvals show exactly what runs.** The prompt carries the whole command (at most 1800 bytes: the approval detail
+  limit minus 200), file paths in canonical absolute form (relative paths start in `/home/bot`; the policy resource
+  uses the same path), a 300-byte preview of file content, and the full URL, target or typed text. Commands, URLs,
+  targets and text containing control or invisible characters (carriage return, escape, zero-width, bidi marks,
+  invalid UTF-8) are refused instead of being shown differently from what would run; newlines and tabs are allowed in
+  commands and typed text.
+- **Write, then run.** A `computer_run` approval shows the command (`python3 job.py`), not the content of a script
+  the bot wrote before; the `computer_write_file` approval for that script showed only its first 300 bytes. Approving
+  a run of a file the bot wrote means trusting the whole file.
+- **Passwords.** `browser_type` refuses when the resolved field is an `input[type=password]` (checked in the guest)
+  and tells the bot to ask the user to take over. The check does not see through shadow DOM, so a password field inside a custom web component is not detected (gap).
+- **Results are untrusted.** Command output, file contents, page text, screenshots and guest error text are
+  `Untrusted` (fenced by the engine). The model sees at most 64 KiB per command or file and 90 KiB of page text, with
+  a note on how to get the rest; binary files are summarised. URLs must be absolute http(s); targets are a CSS
+  selector or `text=<visible text>` (`wire.ValidateBrowser`, checked by the tool and again by the guest).
+- **Screenshots.** `browser_screenshot` returns the PNG as `ToolResult.Images`. A vision model gets it in a transient
+  user message after the tool results, for the latest step only (earlier ones become a text placeholder); it is never
+  stored or logged. Other models get a text note and should use `browser_read`.
+- **Limits.** Computer bots default to 30 steps and 60 tool calls per turn (`computerMaxSteps`, `computerMaxToolCalls`
+  in `internal/chat/engine.go`) unless the bot sets its own. `computer_read_file`, `browser_read` and
+  `browser_screenshot` are exempt from the repeated-identical-call guard, because the file or page changes between
+  calls. For the other `computer_*` and `browser_*` tools the guard counts only identical calls in a row (the third
+  in a row stops the turn), so a step repeated between others (click Next, read, click Next) is allowed; other tools
+  still stop at the third identical call anywhere in the turn.
+- **Deadlines.** Every guest call has one: a command's timeout (default 120 s, max 600 s) plus 30 s, files 60 s,
+  browser 90 s. Starting the VM is bounded separately at 100 s (boot, busy wait, slack). The guest bounds a page load
+  at 60 s and other browser steps at 20 s.
+- **Archived or missing bots are refused** before anything boots ("you no longer exist, so you have no computer").
+- **Card.** Each reply gets one compact card part (`type: "computer"`, `id: "computer"`, `name` the last tool,
+  `status` running|waiting|done|failed, `text` the human line, `summary` the outcome), updated through
+  `RunContext.Emit`; it says "Starting the computer…" while the VM boots. Errors map to plain messages: not set up,
+  failed to start, stopped unexpectedly, all computers busy, low memory, the user is controlling the computer, an
+  image too old for this feature. Phase 3 publishes no activity event; the Computer tab's live echo of commands is
+  phase 4.
+- **What the user sees today.** The Tools switch, the card in chat and the "Needs you" notification. The Computer
+  tab, where the user watches the screen and presses Take over and Done, arrives with phase 4; until then
+  `sandbox.takeover` and `sandbox.release` have no button.
+
+### Takeover
+
+`ask_user_to_take_over(reason)` (reason at most 200 characters, plain single-line text) waits in `sandbox.Handoffs`
+(`internal/sandbox/handoff.go`): up to `DefaultHandoffAsk` (5 minutes, the same as `policy.DefaultApprovalTimeout`)
+for the user to press Take over, then until Done, at most `DefaultHandoffHold` (30 minutes). The tool texts take both
+numbers from those constants. The tool makes sure the computer runs first, so there is a screen to take over.
+Phone-call turns cannot ask for a takeover. Untrusted content cannot start one: only the user's click takes over.
+
+- **Notification.** While the bot waits the daemon publishes `sandbox.handoff` (`HandoffState{botId, pending, reason,
+  since}`, also answered by IPC `sandbox.handoff{botId}`) and keeps one "Needs you" notification open (ref
+  `computer-takeover:<botId>`, target `computer:<botId>`, which opens the bot). It resolves however the wait ends.
+  Handoffs do not survive a daemon restart, so the notification list drops such entries on start.
+- **IPC.** `sandbox.takeover{botId}` takes the lock (`Manager.TakeOver`; the computer must be running),
+  `sandbox.release{botId, note?}` releases it and resumes the bot with "The user finished: <note>" (note at most 500
+  characters, control and invisible characters stripped). `sandbox.takeover`, `sandbox.release` and `sandbox.handoff`
+  are **desktop-only**: the daemon refuses them from any other IPC client, so neither the CLI nor a bot can use them.
+  Take over and Done are audited as actor `user` (`computer.takeover`, `computer.release`).
+- **Lock lifetime.** Whether the user holds the computer is decided under one mutex shared by the Take over and Done
+  handlers and the start of a wait, so a wait never starts from a stale answer. A VM stop or crash ends the wait (the
+  bot is told the computer stopped) and drops the lock. The lock is also released, so the bot's browser works again,
+  when the hold timeout passes or the bot's turn is cancelled, including when the user started the takeover by hand
+  with no request pending.
+- **While taken over.** `computer_run`, `computer_write_file` and the browser tools are refused before any approval
+  prompt, again after one, and by the daemon adapter after the VM starts. `computer_read_file` is allowed. A guest
+  call already in flight finishes first (a command started before the takeover keeps running, and so does anything it
+  left running in the background). The bot's user cannot connect to Chromium's DevTools port or wayvnc at all (guest
+  nftables, image 0.1.3), so a command cannot connect to the DevTools port or the VNC port. Same-uid processes can still use the Wayland socket (screencopy), Chromium's ProcessSingleton socket (to open URLs in the running browser) and wayvnc's control socket; the fix is running Chromium, cage and wayvnc as a separate user (follow-up issue).
+- **Signing in.** What the user signs in to stays in the browser profile on the bot's computer, and the bot can use
+  those sessions afterwards. The profile's cookie files are owned by `bot`, so the bot's own commands can read them
+  too (and use them outside the browser). Each new host the bot types still needs approval unless the user chose
+  "always allow" for it. There is no UI to wipe the browser profile yet; the only way is to delete the computer.
+
+### Guest browser and screen
+
+`cmd/orole-guest` serves `POST /browser` with chromedp attached to the visible Chromium tab over CDP on
+`127.0.0.1:9222` inside the guest (open waits for the load event; read returns title, URL and the visible text capped
+at 90 KiB; screenshot is a viewport PNG, at most 5 MiB), and `POST /screen` as a full-duplex relay to the guest's VNC
+server on `127.0.0.1:5900`. Neither port is reachable from the host except through the authenticated channel, nor
+(from image 0.1.3) by the bot's own user inside the guest. Both routes need guest image 0.1.2; a computer still on an
+older image answers 501 and the bot is told to ask the user to reset it. The viewer that uses `/screen` is phase 4.
+Attaching chromedp to a tab has its own 20 s deadline: an attach that hangs is given up (and filed later if it ever
+finishes) instead of blocking every following action. Image 0.1.3 adds the password-field refusal and that deadline.
 
 ## Windows backend (phase 2)
 

@@ -100,6 +100,15 @@ describe("toInput", () => {
     expect(toInput(initialForm(), "b1").config).not.toHaveProperty("jarvis");
     expect(fingerprint(valid())).not.toBe(fingerprint(valid({ jarvisEnabled: true })));
   });
+
+  it("round-trips the computer switch and omits it when off", () => {
+    const saved = bot("b1", { config: config({ computer: true }) });
+    const form = formFromBot(saved);
+    expect(form.computer).toBe(true);
+    expect(toInput(form, "b1").config.computer).toBe(true);
+    expect(toInput({ ...form, computer: false }, "b1").config).not.toHaveProperty("computer");
+    expect(initialForm().computer).toBe(false);
+  });
 });
 
 describe("formReducer", () => {

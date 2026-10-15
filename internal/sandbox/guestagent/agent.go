@@ -32,6 +32,12 @@ type Config struct {
 	// HelperExe is the binary started (as RunAs) for /files/* when RunAs is set; it must call RunFileHelper
 	// first thing. Default: this executable.
 	HelperExe string
+
+	// Browser drives the visible Chromium tab for POST /browser. nil answers 501 (no browser in this guest).
+	Browser BrowserPage
+
+	// Screen dials the guest's VNC server for POST /screen. nil answers 501 (no screen in this guest).
+	Screen ScreenDialer
 }
 
 // Identity is a Unix user to run guest commands as.
@@ -72,8 +78,16 @@ func New(cfg Config) *Agent {
 	a.mux.HandleFunc("POST /exec", a.handleExec)
 	a.mux.HandleFunc("POST /files/read", a.handleReadFile)
 	a.mux.HandleFunc("POST /files/write", a.handleWriteFile)
-	a.mux.HandleFunc("POST /screen", notAvailable)
-	a.mux.HandleFunc("POST /browser", notAvailable)
+	if cfg.Screen != nil {
+		a.mux.HandleFunc("POST /screen", screenHandler(cfg.Screen))
+	} else {
+		a.mux.HandleFunc("POST /screen", notAvailable)
+	}
+	if cfg.Browser != nil {
+		a.mux.HandleFunc("POST /browser", browserHandler(cfg.Browser))
+	} else {
+		a.mux.HandleFunc("POST /browser", notAvailable)
+	}
 	a.mux.HandleFunc("POST /poweroff", a.handlePowerOff)
 	return a
 }
@@ -95,7 +109,7 @@ func (a *Agent) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, wire.Health{Version: a.cfg.Version, Ready: ready})
 }
 
-// notAvailable answers the stream types later phases add (/screen in phase 4, /browser in phase 3).
+// notAvailable answers the stream types later phases add (/screen when Config.Screen is unset, /browser when Config.Browser is unset).
 func notAvailable(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "not available in this guest version", http.StatusNotImplemented)
 }

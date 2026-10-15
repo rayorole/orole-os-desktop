@@ -131,6 +131,8 @@ func (n *appNotices) reconcile() {
 				live = waitingRuns[strings.TrimPrefix(ref, refRun)]
 			case strings.HasPrefix(ref, refPolicy):
 				// Permission requests live in memory only; none survive a restart.
+			case strings.HasPrefix(ref, refTakeover):
+				// Takeover requests (ask_user_to_take_over) wait in a bot turn, which a restart ends.
 			default:
 				live = true // a ref this daemon does not produce: leave it
 			}

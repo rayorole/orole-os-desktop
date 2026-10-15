@@ -281,3 +281,43 @@ func TestStartupMarksInterruptedRuns(t *testing.T) {
 		t.Fatalf("finish times after restart: %v", finished)
 	}
 }
+
+// The computer switch is stored with the bot but is a local grant: exports drop it and imports cannot set it.
+func TestComputerSwitchIsStoredButNeverExported(t *testing.T) {
+	e := newEnv(t, nil)
+	ctx := context.Background()
+	b := e.bot("Pc", func(in *BotInput) { in.Config.Computer = true })
+	got, err := e.m.Bot(ctx, b.ID)
+	if err != nil || !got.Config.Computer {
+		t.Fatalf("stored: %+v %v", got.Config, err)
+	}
+	exp, err := e.m.ExportBot(ctx, b.ID)
+	if err != nil || exp.Bot.Config.Computer {
+		t.Fatalf("export must drop the computer switch: %+v %v", exp.Bot.Config, err)
+	}
+	exp.Bot.Config.Computer = true
+	imp, err := e.m.ImportBot(ctx, exp)
+	if err != nil || imp.Config.Computer {
+		t.Fatalf("import must not enable the computer: %+v %v", imp.Config, err)
+	}
+}
+
+func TestTurnBudgetDefaults(t *testing.T) {
+	cases := []struct {
+		name         string
+		cfg          BotConfig
+		steps, calls int
+	}{
+		{"plain", BotConfig{}, 8, 20},
+		{"computer", BotConfig{Computer: true}, 30, 60},
+		{"computer own limits", BotConfig{Computer: true, Limits: BotLimits{MaxSteps: 5, MaxToolCalls: 9}}, 5, 9},
+		{"computer partial", BotConfig{Computer: true, Limits: BotLimits{MaxSteps: 12}}, 12, 60},
+		{"plain own limits", BotConfig{Limits: BotLimits{MaxSteps: 5, MaxToolCalls: 9}}, 5, 9},
+	}
+	for _, c := range cases {
+		s, k := turnBudget(c.cfg)
+		if s != c.steps || k != c.calls {
+			t.Errorf("%s: got %d/%d want %d/%d", c.name, s, k, c.steps, c.calls)
+		}
+	}
+}

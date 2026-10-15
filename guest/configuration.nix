@@ -54,6 +54,10 @@ in
   # 10.0.2.3. Only DHCP renewals (systemd-networkd, port 68, which the bot cannot bind) go to 10.0.2.2.
   # Root in the guest could undo this, and the bot has no sudo. The internet and the home LAN stay
   # reachable: a documented, accepted risk (spec, "Network").
+  # Chromium's DevTools port (9222) and wayvnc (5900) listen on guest loopback for orole-guest, which runs as
+  # root. The bot user (uid 1000: its commands, and Chromium's own pages) must not reach them, or a command could
+  # drive the browser or watch the screen past the takeover lock and the per-site approvals. Listening is not
+  # affected (no packet leaves for a bind).
   networking.nftables = {
     enable = true;
     tables.orole_host = {
@@ -64,6 +68,8 @@ in
           ip daddr 10.0.2.2 udp sport 68 udp dport 67 accept
           ip daddr 10.0.2.2 reject
           ip6 daddr fec0::2 reject
+          meta skuid 1000 ip daddr 127.0.0.0/8 tcp dport { 5900, 9222 } reject with tcp reset
+          meta skuid 1000 ip6 daddr ::1 tcp dport { 5900, 9222 } reject with tcp reset
         }
       '';
     };

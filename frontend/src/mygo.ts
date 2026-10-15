@@ -265,6 +265,12 @@ export interface BotConfig {
    */
   codeTasks?: boolean;
   /**
+   * Computer gives the bot its own local Linux VM (internal/sandbox): the computer_*, browser_* and
+   * ask_user_to_take_over tools. No VM exists until the first tool call after it is switched on. Never exported.
+   * Unset turn limits default to 30 steps / 60 tool calls instead of 8 / 20.
+   */
+  computer?: boolean;
+  /**
    * ToolAccess overrides the global "Bot tools" setting for this bot: how much it may do through
    * integrations and tools without asking (one of the ToolAccess* values; "" = the global setting).
    */
