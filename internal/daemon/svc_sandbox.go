@@ -45,8 +45,9 @@ type sandboxSetupRun struct {
 //
 // IPC: sandbox.availability, sandbox.status{botId}, sandbox.setup.enable (one UAC prompt, audited),
 // sandbox.runtime.install (starts the background download, returns its state; calling it again while it runs
-// returns progress), and the takeover methods (registerSandboxTakeover). Events: sandbox.status,
-// sandbox.availability, sandbox.runtime, sandbox.setup, sandbox.handoff.
+// returns progress), the takeover methods (registerSandboxTakeover) and the Computer tab's viewer, screen and
+// terminal (registerSandboxStreams). Events: sandbox.status, sandbox.availability, sandbox.runtime, sandbox.setup,
+// sandbox.handoff, sandbox.screen.data.
 //
 // Setup and install are user actions: they run with the daemon's lifetime, not the request's, so closing the
 // window or a call timeout does not abort them, and report progress as events.
@@ -66,7 +67,7 @@ func (d *Daemon) registerSandbox() {
 		}})
 	m = sandbox.NewManager(sandbox.Config{
 		Paths: paths, MaxRunning: 4, IdleTimeout: 15 * time.Minute, BootTimeout: sandboxBootTimeout, BusyWait: sandboxBusyWait,
-		FreeMemory: d.freeMemory, Now: time.Now, Image: rt.Image,
+		FreeMemory: d.freeMemory, Now: time.Now, Image: rt.Image, OnExec: d.echoSandboxExec,
 	}, sandbox.NewHostBackend(rt, paths), d.sandboxStore)
 	d.Sandbox = m
 	m.Subscribe(func(s sandbox.Status) { d.IPC.Publish("sandbox.status", s) })
@@ -155,6 +156,8 @@ func (d *Daemon) registerSandbox() {
 		}
 		return st, nil
 	})
+
+	d.registerSandboxStreams()
 }
 
 // requireDesktopUser refuses a call made for a bot or an automation. IPC calls come from the desktop app or the
@@ -279,6 +282,12 @@ func (d *Daemon) shutdownSandbox() {
 	d.sandboxMu.Unlock()
 	if d.sandboxStop != nil {
 		d.sandboxStop()
+	}
+	if d.sandboxViewers != nil {
+		d.sandboxViewers.Close() // no lease expiry acts on a computer that is stopping
+	}
+	if d.sandboxScreens != nil {
+		d.sandboxScreens.CloseAll()
 	}
 	if d.Sandbox != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

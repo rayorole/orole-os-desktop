@@ -4,16 +4,47 @@ Every chat bot can have its own small Linux computer on the user's PC: its own d
 visible browser. Design: `docs/superpowers/specs/2026-10-15-bot-computer-design.md`. Plans:
 `docs/superpowers/plans/2026-10-15-bot-computer*.md`.
 
-**Status: phase 3 (bot tools).** The manager, store, guest protocol and `orole-guest` run on a real QEMU backend
-on Windows, with the runtime download, the setup helper and the NixOS guest image, all checked end to end on build 22000
+**Status: phases 1-4 built.** The manager, store, guest protocol and `orole-guest` run on a real QEMU backend on
+Windows, with the runtime download, the setup helper and the NixOS guest image, all checked end to end on build 22000
 (see "Guest image checks"). A bot with "Has its own computer" switched on gets terminal, file and browser tools and can
-ask the user to take over (see "Bot tools"). The pinned release assets are drafts until the owner publishes them, so a
-user's build cannot download them yet (the pinned URLs answer 404). What is visible in the app: the Tools switch, the
-card in chat and the "Needs you" notification. The Computer tab (screen, terminal, Take over and Done buttons) and its
-setup screens come in phase 4.
+ask the user to take over (see "Bot tools"), and the Computer tab shows the screen, a terminal and the Take over and
+Done buttons (see "What the user sees" and "Computer tab streams"). **Release gate:** the pinned release assets are
+drafts until the owner publishes them, so a user's build cannot download them yet (the pinned URLs answer 404); publish
+the drafts `qemu-v20260811` and `guest-v0.1.3` before shipping, and decide how the GPL source offer is made (see
+"Licences"). The manual checklist is `docs/development/bot-computer-e2e.md`.
 
 **A bot's computer lives in the daemon: it survives GUI restarts, not a daemon exit or reboot. Its disk persists;
 running commands do not.**
+
+## What the user sees
+
+- A bot gets a computer when **Computer** is switched on in its Tools (off by default). Nothing is created until the
+  bot first uses it; the computer then starts ("Starting the computer..." in chat), stops after 15 minutes without bot
+  activity or anyone watching, and stops when the daemon exits. Its disk, files and browser logins stay.
+- The bot's title bar gets a **Computer** button that opens the Computer tab beside the conversation. A "Using the
+  computer" card in the chat and the "Needs you" notification from `ask_user_to_take_over` (target
+  `computer:<botId>`) open the same tab.
+- The Computer tab shows, in this order of precedence:
+  - the **setup screen** when this PC cannot run one yet. The text comes from the daemon's availability reason and
+    detail: Windows Hypervisor Platform off (Enable: one UAC prompt, then restart), restart pending, runtime not
+    downloaded (Download: about 1.6 GB, verified), hypervisor not running or virtualization off in the firmware, or an
+    unsupported Windows (needs Windows 10 version 2004, build 19041, or later, with Windows Hypervisor Platform; Hyper-V
+    users usually have it already). It states the network and login risks below;
+  - the computer's state when it is not running: off, starting, shutting down, or why it failed;
+  - while it runs: the **live screen** (view-only until Take over), **Take over** / **Done** (with an optional note to
+    the bot) and a **terminal** inside the computer. When the bot asked for help, its reason is shown with Take over.
+- There is deliberately no start, stop, reset or wipe button, and no resource display.
+- Take over gives the user the mouse and keyboard; the bot's commands, file writes and browser tools are refused until
+  Done. Closing the tab or switching bot does **not** hand control back, because that would tell a waiting bot that
+  the user finished. A takeover the user started by hand ends about 150 s after the tab went away (closed, hidden or
+  the GUI gone) unless the tab comes back first; one the bot asked for ends at Done or after the 30-minute hold limit.
+- The UAC prompt for Windows Hypervisor Platform is started by the daemon; the desktop app first calls
+  `AllowSetForegroundWindow` for the daemon's process so the prompt appears in front.
+- Commands the bot runs are echoed in the open terminal (dim `[bot] $ <command>`, output, exit code). The terminal
+  is a daemon terminal: it survives closing the tab or restarting the GUI, and ends when the computer stops.
+- The terminal's shell runs as the `bot` user, so everything it shows is untrusted: the bot's commands can write
+  escape sequences to that pty and read what the user types there, and links in its output are clickable. Do not type
+  secrets into it.
 
 ## Architecture
 
@@ -79,7 +110,7 @@ memory; the guest answers 401 otherwise.
 | `POST /pty?cols=&rows=` | login shell (bash) as `bot` on a pseudo-terminal it owns, full duplex; `X-Orole-Pty` id, `X-Orole-Exit` trailer | |
 | `POST /pty/resize` | resize by id | |
 | `POST /browser` | chromedp on the visible Chromium: open, click, type, read, screenshot (see "Bot tools"); 501 on an image without it | page load 60 s, other steps 20 s; page text 90 KiB, screenshot 5 MiB |
-| `POST /screen` | full-duplex relay to the guest's VNC server (the viewer is phase 4); 501 on an image without it | |
+| `POST /screen` | full-duplex relay to the guest's VNC server (the Computer tab's viewer); 501 on an image without it | |
 | `POST /poweroff` | 202, then a clean power off | |
 
 The host never trusts the guest: answers over 8 MiB are refused, exec output is cut to 1 MiB and file content to
@@ -141,8 +172,8 @@ gone the boot fails with `ErrImageGone` instead of booting the overlay against a
   update) kills the bot's running commands and terminals.
 - Inside the guest, nftables rejects everything to 10.0.2.2 and fec0::2 (QEMU user networking's aliases for the
   host's loopback) except DHCP renewals from port 68, which only root can bind.
-- The guest has open internet and can reach the home network (printers, NAS, router pages, other PCs); only the host's
-  own loopback is blocked, and only for `bot` (guest root could bypass it). Phase 4 states this in the UI.
+- The guest has open internet and can reach the home network (printers, NAS, router pages, other PCs); the guest's connections to the host's own loopback are blocked, and only for `bot` (guest root could bypass it), but
+  anything on this PC that accepts network connections on its LAN address is reachable. The setup screen states this.
 - Since image 0.1.3, nftables also rejects TCP connects from uid 1000 (`bot`: its commands, and Chromium's own pages)
   to 127.0.0.0/8 and ::1 ports 9222 (Chromium DevTools) and 5900 (wayvnc). Only `orole-guest` (root) connects to them,
   so the bot cannot drive the browser or read the screen around the tools' approvals and the takeover lock. Chromium,
@@ -212,7 +243,7 @@ after ready) and the rows marked 0.1.3 below.
 | Guest tokens in the console logs (`sandbox-<bot>.log`) | none (3.2 KB and 0.8 KB of log) |
 | Test binary killed with `taskkill /F` mid-run (a crashed daemon; `guest-v0.1.0` run) | its QEMU was gone 3 s later (job object, kill on close) |
 
-Not checked here yet: input through wayvnc and glyphs on screen (phase 4, the viewer), the NixOS report's
+Not checked here yet: input through wayvnc and glyphs on screen (the Computer tab's viewer; see the manual checklist), the NixOS report's
 package criteria (numpy/pandas through uv, a native npm module, a downloaded Node binary through nix-ld).
 
 ### Testing
@@ -233,7 +264,7 @@ against GitHub's own asset digest, and writes the file. The pinned URLs
 (`https://github.com/rayorole/orole-os-desktop/releases/download/<tag>/<name>`) work for users only once both releases
 are published.
 
-## Bot tools (phase 3)
+## Bot tools
 
 A saved bot with `BotConfig.computer` (bot settings › Tools: "Has its own computer"; off by default, never exported)
 gets these tools (`internal/chat/tools/computer.go`, `browser.go`, `takeover.go`, wired in
@@ -301,11 +332,9 @@ that names the host (lowercased, punycode, no port or user info): the user is as
   `status` running|waiting|done|failed, `text` the human line, `summary` the outcome), updated through
   `RunContext.Emit`; it says "Starting the computer…" while the VM boots. Errors map to plain messages: not set up,
   failed to start, stopped unexpectedly, all computers busy, low memory, the user is controlling the computer, an
-  image too old for this feature. Phase 3 publishes no activity event; the Computer tab's live echo of commands is
-  phase 4.
-- **What the user sees today.** The Tools switch, the card in chat and the "Needs you" notification. The Computer
-  tab, where the user watches the screen and presses Take over and Done, arrives with phase 4; until then
-  `sandbox.takeover` and `sandbox.release` have no button.
+  image too old for this feature. The Computer tab's live echo of commands comes from the manager's exec hook, not an event.
+- **What the user sees.** See "What the user sees" at the top: the Tools switch, the card in chat, the "Needs you"
+  notification and the Computer tab with Take over and Done.
 
 ### Takeover
 
@@ -346,9 +375,47 @@ Phone-call turns cannot ask for a takeover. Untrusted content cannot start one: 
 at 90 KiB; screenshot is a viewport PNG, at most 5 MiB), and `POST /screen` as a full-duplex relay to the guest's VNC
 server on `127.0.0.1:5900`. Neither port is reachable from the host except through the authenticated channel, nor
 (from image 0.1.3) by the bot's own user inside the guest. Both routes need guest image 0.1.2; a computer still on an
-older image answers 501 and the bot is told to ask the user to reset it. The viewer that uses `/screen` is phase 4.
+older image answers 501 and the bot is told the computer runs an older image that updates when it is recreated (archive and re-create the bot);
+there is no reset button. The Computer tab's viewer uses `/screen`.
 Attaching chromedp to a tab has its own 20 s deadline: an attach that hangs is given up (and filed later if it ever
 finishes) instead of blocking every following action. Image 0.1.3 adds the password-field refusal and that deadline.
+
+### Computer tab streams
+
+The daemon serves the Computer tab from `internal/daemon/svc_sandbox_streams.go`. Every method is **desktop-only**
+(refused for a bot or an automation), and none of them starts a VM: a screen or terminal of a computer that is off
+answers `not_found` ("it starts when the bot uses it"; `Manager.RunningGuest` never boots).
+
+- **Viewer lease.** `sandbox.viewer{botId, watching}` starts, renews or ends the tab's lease (`sandbox.ViewerLeases`,
+  150 s; the UI renews every 45 s). A watched computer is not idle. `watching: false` (tab hidden or closed) clears
+  the flag at once but still arms the 150 s abandonment timer, which a later renewal supersedes. A lease that runs out
+  (or an unwatch not followed by a renewal) clears the flag and, when the user holds the takeover lock with no handoff
+  pending, gives the computer back to the bot (`ReleaseAbandonedTakeover`, under the takeover mutex).
+- **Screen.** `sandbox.screen.open{botId}` -> `{id}` opens `/screen` (opening bounded at 30 s) in `sandbox.ScreenHub`,
+  at most two per bot. Guest bytes arrive as `sandbox.screen.data` events (`ScreenChunk{id, data, closed, error}`;
+  the last one has `closed`). `sandbox.screen.input{id, data}` passes viewer bytes through the RFB filter: keyboard and
+  mouse reach the guest only during a takeover. Unknown or closed screens are `not_found`; more than 128 KiB at once
+  or input outside the accepted RFB subset closes the screen and answers `bad_request`; a guest that stops taking
+  input answers `timeout`. A guest that sends more than its byte budget (32 MiB/s sustained, 64 MiB burst) has the
+  screen closed ("the screen sent too much data"). `sandbox.screen.close{id}` is idempotent. A computer that stops closes its screens ("the
+  computer stopped"), and whenever the lock is released (Done, a hold timeout, a cancelled turn, an abandoned lease)
+  the keys and buttons the user still held are released in the guest.
+- **Input filter** (`internal/sandbox/rfbfilter.go`). Viewer bytes are parsed as RFB 3.8 with security None and a
+  shared session; the ExtendedMouseButtons and xvp pseudo-encodings are stripped, power (xvp) and resize messages are
+  always dropped, and EnableContinuousUpdates is disabled so the guest cannot flood IPC. Keyboard, pointer, clipboard
+  and QEMU key messages are forwarded **only while the user holds the takeover lock**; anything else closes the stream.
+  When the lock ends, the keys and buttons still held are released in the guest. noVNC's `viewOnly` is cosmetic.
+- **Terminal.** `sandbox.pty.open{botId, cols, rows}` -> `terminals.Info` opens a login shell in the guest and adopts
+  it as an ordinary daemon terminal (owner `sandbox:<botId>`, shell `orole-guest`), so `terminals.write`, resize,
+  attach and the `terminal.*` events serve it. A bot has at most one; an open one is returned. `cols`/`rows` default
+  to 120x30 and are clamped to 20..500 and 5..200 before the guest sees them. Like every terminal it survives GUI
+  restarts, not a daemon exit, and it ends when the computer stops. The shell runs as `bot`: its output is untrusted
+  (bot commands can write escape sequences to the pty and see what the user types there; links in it are clickable).
+- **Command echo.** Each command the bot runs (`computer_run`) is echoed into that terminal when it is open: a dim
+  `[bot] $ command` line, the output (newlines as CRLF, at most 64 KiB after that) and a dim `(exit N, timed out,
+  output cut)` line. Escape sequences and control characters are removed from the echoed command and output, so the
+  echo itself cannot drive the user's terminal; this does not cover what bot processes write to the pty directly. Delivery is ordered per bot and never delays the command: when the terminal falls
+  behind, echoes are dropped.
 
 ## Windows backend (phase 2)
 
@@ -409,6 +476,8 @@ finishes) instead of blocking every following action. Image 0.1.3 adds the passw
 - **Licences.** QEMU is GPL-2.0 and the guest image contains GPL software (the Linux kernel among it). The QEMU
   zip carries `SOURCE.txt` and the licence files of the installer; the corresponding source of the image is
   reproducible from the pinned nixpkgs revision. Both are recorded in `docs/research/upstream-attribution.md`.
+  Before shipping, publish the draft releases `qemu-v20260811` and `guest-v0.1.3` and decide how the GPL source offer
+  is made (for example a written offer or hosting the source next to the assets).
 
 ## Phase 2 spike (WHPX on build 22000)
 

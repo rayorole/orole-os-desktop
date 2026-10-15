@@ -37,6 +37,7 @@
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@lezer/highlight": "^1.2.5",
     "@lobehub/icons-static-svg": "^1.95.1",
+    "@novnc/novnc": "1.7.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-virtual": "^3.14.13",
     "@web-kits/audio": "^0.2.0",

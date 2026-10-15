@@ -18,6 +18,7 @@ import { splitBubbles } from "./bubbles";
 import { Bubble } from "./Bubble";
 import { TaskChips } from "./TaskChip";
 import { CallCard } from "@/features/jarvis/CallCard";
+import { ComputerCard } from "@/features/computer/ComputerCard";
 
 /** Whether a user message has anything to draw (the setup kickoff is text the user never sees). */
 export const hasVisibleParts = (parts: readonly MsgPart[]): boolean => parts.some((p) => p.type === "attachment" || (p.type === "text" && !p.hidden));
@@ -50,6 +51,8 @@ export function MessageParts({ message, onAnswer, botName = "This bot", botAvata
   const memory = message.parts.filter((p) => p.type === "memory");
   // Every task the reply started is listed together, where the first one was started.
   const tasks = message.parts.filter((p) => p.type === "task" && p.id);
+  // Every use of the computer in a reply is one card where the first one was, showing the latest step.
+  const computer = message.parts.filter((p) => p.type === "computer");
   // A document rewritten under the same title shows once, at its latest version.
   const latestDocument = new Map<string, number>();
   message.parts.forEach((p, i) => { if (p.type === "ui" && p.name === "document") latestDocument.set(parseDocument(p.spec)?.title ?? "", i); });
@@ -78,6 +81,9 @@ export function MessageParts({ message, onAnswer, botName = "This bot", botAvata
         break;
       case "task":
         if (part === tasks[0]) blocks.push(<TaskChips key="tasks" parts={tasks} />);
+        break;
+      case "computer":
+        if (part === computer[0]) blocks.push(<ComputerCard key="computer" part={computer[computer.length - 1]!} />);
         break;
       default:
         break; // work rows go to the timeline, memory writes to the chips below; citations ride along; attachments belong to user messages

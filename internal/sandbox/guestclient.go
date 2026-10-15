@@ -47,6 +47,9 @@ type Guest struct {
 	mu      sync.Mutex
 	onUse   func(delta int)
 	onTouch func()
+
+	hookMu sync.RWMutex
+	onExec func(wire.ExecRequest, wire.ExecResult)
 }
 
 func NewGuest(conn net.Conn, token string) (*Guest, error) {
@@ -105,7 +108,21 @@ func (g *Guest) Exec(ctx context.Context, req wire.ExecRequest) (wire.ExecResult
 		}
 		res.Stderr = res.Stderr[:min(len(res.Stderr), wire.MaxExecOutput-len(res.Stdout))]
 	}
+	g.hookMu.RLock()
+	hook := g.onExec
+	g.hookMu.RUnlock()
+	if hook != nil {
+		hook(req, res)
+	}
 	return res, nil
+}
+
+// OnExec registers fn to be told about every command that ran successfully (the daemon echoes them in the bot's
+// Computer terminal). fn runs on the caller's goroutine after Exec has its (capped) result; it must not block.
+func (g *Guest) OnExec(fn func(req wire.ExecRequest, res wire.ExecResult)) {
+	g.hookMu.Lock()
+	g.onExec = fn
+	g.hookMu.Unlock()
 }
 
 func (g *Guest) ReadFile(ctx context.Context, path string) (wire.ReadFileResult, error) {

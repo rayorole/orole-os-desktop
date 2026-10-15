@@ -80,6 +80,11 @@ type Daemon struct {
 	sandboxClosing bool
 	sandboxWG      sync.WaitGroup
 	sandboxStore   *sandbox.Store
+	// sandboxScreens relays the live screens of open Computer tabs and sandboxViewers holds their viewer leases
+	// (svc_sandbox_streams.go); sandboxPTYMu makes concurrent sandbox.pty.open calls share one terminal per bot.
+	sandboxScreens *sandbox.ScreenHub
+	sandboxViewers *sandbox.ViewerLeases
+	sandboxPTYMu   sync.Mutex
 	// handoffsOnce/handoffsSet hold the bots waiting for the user to take over their computer
 	// (ask_user_to_take_over; use d.handoffs()). takeoverMu orders the Take over and Done handlers with the start
 	// of a wait, so a wait sees whether the user holds the computer at the moment it registers.

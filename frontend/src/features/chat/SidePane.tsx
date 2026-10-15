@@ -7,6 +7,8 @@ import { DocumentPane } from "./DocumentPane";
 // Split out like the builder: the task feed and composer load only when a task is opened beside the conversation. ChatView
 // warms the chunk on idle so the first open never waits on the network.
 const TaskPane = lazy(() => import("./TaskPane").then((m) => ({ default: m.TaskPane })));
+// noVNC and the Computer pane load only when a bot's computer is opened.
+const ComputerTab = lazy(() => import("@/features/computer/ComputerTab").then((m) => ({ default: m.ComputerTab })));
 
 /** The pane's share of the chat width until the user drags it to a width of their own. */
 const SHARE = 0.45;
@@ -52,7 +54,7 @@ function useContainerWidth(container: RefObject<HTMLElement | null>): number {
 }
 
 /**
- * What sits beside the conversation: a code task, a phone call's transcript or a document. Like the settings panel it always takes its own column
+ * What sits beside the conversation: a code task, a phone call's transcript, a bot's computer or a document. Like the settings panel it always takes its own column
  * and the conversation narrows to make room; it never lies over the thread. The divider on its left edge resizes it
  * (drag or arrow keys, double-click to reset) and the width is remembered. One host that stays mounted, so opening
  * widens it with an exit on close, and switching between panes crossfades the content instead of remounting the shell.
@@ -135,7 +137,9 @@ export function SidePane({ botId, container }: { botId: string; container: RefOb
               ? <Suspense fallback={null}><TaskPane taskId={pane.id} ready={ready} onClose={close} /></Suspense>
               : pane.kind === "call"
                 ? <CallPane callId={pane.id} botId={botId} onClose={close} />
-                : <DocumentPane botId={botId} messageId={pane.messageId} partIndex={pane.partIndex} onClose={close} />}
+                : pane.kind === "computer"
+                  ? <Suspense fallback={null}><ComputerTab botId={pane.id} onClose={close} /></Suspense>
+                  : <DocumentPane botId={botId} messageId={pane.messageId} partIndex={pane.partIndex} onClose={close} />}
           </motion.div>
         </AnimatePresence>
       </div>

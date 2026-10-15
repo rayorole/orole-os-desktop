@@ -88,7 +88,7 @@ func (l *Link) Start(ctx context.Context) error {
 		return err
 	}
 	c.OnEvent(forward)
-	if err := c.Subscribe(ctx, "terminal.*", "settings.*", "projects.*", "worktrees.*", "github.*", "files.*", "notifications.*", "agents.*", "mcp.*", "policy.*", "applications.*", "plugins.*", "chat.*", "llm.*", "dictation.*"); err != nil {
+	if err := c.Subscribe(ctx, "terminal.*", "settings.*", "projects.*", "worktrees.*", "github.*", "files.*", "notifications.*", "agents.*", "mcp.*", "policy.*", "applications.*", "plugins.*", "chat.*", "llm.*", "dictation.*", "sandbox.*"); err != nil {
 		c.Close()
 		return err
 	}
@@ -123,7 +123,7 @@ func (l *Link) endMaintenance() {
 
 func forward(event string, data json.RawMessage) {
 	forwardMCP(event, data)
-	if forwardPlugins(event, data) || forwardChat(event, data) || forwardDictation(event, data) {
+	if forwardPlugins(event, data) || forwardChat(event, data) || forwardDictation(event, data) || forwardSandbox(event, data) {
 		return
 	}
 	if forwardApplications(event, data) {
@@ -207,6 +207,8 @@ func (l *Link) call(ctx context.Context, method string, params, out any) error {
 		"files.list", "files.stat", "files.read", "files.write", "files.search",
 		"jarvis.configure", "jarvis.verify.start", "jarvis.call.test", "jarvis.voices", "jarvis.voices.add", "jarvis.models":
 		timeout = 16 * time.Minute // five-minute approval followed by a bounded tool call
+	case "sandbox.setup.enable":
+		timeout = time.Minute // the daemon answers within about 25 s (then the result follows as events)
 	case "dictation.transcribe":
 		timeout = dictation.TranscribeTimeout + 15*time.Second // the daemon bounds it itself; this only catches a lost reply
 	}

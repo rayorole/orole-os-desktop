@@ -109,7 +109,10 @@ One local VM per bot (`bot-computer.md`). `registerSandbox` runs before `registe
 computer. IPC `sandbox.availability`, `sandbox.status`, `sandbox.setup.enable` (one UAC prompt for Windows Hypervisor
 Platform, user only) and `sandbox.runtime.install` (background download, user only), and the desktop-only takeover methods `sandbox.takeover`,
 `sandbox.release` and `sandbox.handoff` (`computer_tools.go`); events `sandbox.status`, `sandbox.availability`,
-`sandbox.runtime`, `sandbox.setup`, `sandbox.handoff`. The bot tools (`computer_run`, `browser_*`,
+`sandbox.runtime`, `sandbox.setup`, `sandbox.handoff`. The Computer tab's desktop-only methods (`svc_sandbox_streams.go`):
+`sandbox.viewer{botId,watching}` (a 150 s lease), `sandbox.screen.open|input|close` with the event `sandbox.screen.data`
+(guest bytes in chunks; viewer input passes the RFB filter) and `sandbox.pty.open{botId,cols,rows}` (adopts a guest
+shell as a daemon terminal). The bot tools (`computer_run`, `browser_*`,
 `ask_user_to_take_over`) run through `computerRuntime`; a pending takeover keeps a "Needs you" notification open.
 VMs stop on daemon exit; disks survive.
 

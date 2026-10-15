@@ -58,6 +58,7 @@ func main() {
 	mygo.Bind(app.Mail{L: link})
 	mygo.Bind(app.Drive{L: link})
 	mygo.Bind(app.Machines{L: link})
+	mygo.Bind(app.Sandbox{L: link})
 	mygo.Bind(app.Applications{L: link})
 	mygo.Bind(app.Desktop{PendingNavigation: native.Navigation})
 

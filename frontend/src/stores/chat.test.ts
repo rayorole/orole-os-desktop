@@ -203,6 +203,14 @@ describe("selection", () => {
     expect(result.current?.name).toBe("Alpha");
   });
 
+  it("opens a bot's Computer pane and drops it when another bot is selected", () => {
+    useChat.setState({ selectedBotId: "b1", pane: null, settingsOpen: true });
+    useChat.getState().openComputerPane("b1");
+    expect(useChat.getState()).toMatchObject({ pane: { kind: "computer", id: "b1" }, settingsOpen: false });
+    useChat.getState().select("b2");
+    expect(useChat.getState().pane).toBeNull();
+  });
+
   it("open() selects the bot and shows the chat view", () => {
     useChat.getState().open("a");
     expect(useChat.getState().selectedBotId).toBe("a");

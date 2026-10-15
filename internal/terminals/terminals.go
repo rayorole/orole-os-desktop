@@ -245,6 +245,66 @@ func (m *Manager) Create(o CreateOptions) (Info, error) {
 	return info, nil
 }
 
+// AdoptOptions describes a process started outside this manager (the bot computer's guest PTY) that the manager
+// should own from now on.
+type AdoptOptions struct {
+	Title string
+	Shell string // label shown as the shell, e.g. "orole-guest"
+	Owner string // set by trusted daemon code only, e.g. "sandbox:<botID>"
+	Cols  int
+	Rows  int
+}
+
+// Adopt registers an already running process as a session, so Write, Resize, Attach, Close and the output events
+// work for it like for any terminal. It counts against the session cap. The manager owns p from here on: when Adopt
+// fails it closes p.
+func (m *Manager) Adopt(p Process, o AdoptOptions) (Info, error) {
+	if o.Cols <= 0 {
+		o.Cols = 120
+	}
+	if o.Rows <= 0 {
+		o.Rows = 30
+	}
+	m.mu.Lock()
+	if m.running >= m.max {
+		m.mu.Unlock()
+		_ = p.Close()
+		return Info{}, errors.New("terminals: session limit reached")
+	}
+	m.running++
+	m.mu.Unlock()
+	info := Info{ID: uuid.NewString(), Title: o.Title, Shell: o.Shell, Cols: o.Cols, Rows: o.Rows, Pid: p.Pid(),
+		State: Running, StartedAt: time.Now().UTC(), Owner: o.Owner}
+	if info.Title == "" {
+		info.Title = o.Shell
+	}
+	s := m.newSession(p, info)
+	m.mu.Lock()
+	m.sess[info.ID] = s
+	m.mu.Unlock()
+	go s.pump()
+	return info, nil
+}
+
+// Inject adds bytes to a running session's output as if its process had written them; they are never written to
+// the process. The bot computer uses it to show commands the bot ran in the user's Computer terminal.
+func (m *Manager) Inject(id string, data []byte) error {
+	s, err := m.get(id)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	running := s.info.State == Running
+	s.mu.Unlock()
+	if !running {
+		return errors.New("terminals: session has exited")
+	}
+	if len(data) > 0 {
+		s.push(data)
+	}
+	return nil
+}
+
 // readLoop copies pty output into the scrollback. The read buffer is reused,
 // so a read allocates nothing; delivery to the sink is paced by push/flush.
 func (s *Session) readLoop() {

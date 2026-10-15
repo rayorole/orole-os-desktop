@@ -46,6 +46,11 @@ Single place that answers "may this actor do this?". Inputs: actor, action, reso
   Automation/bot/agent-originated launches, actual tool actions, and external hints do not receive this default: a bot
   acting through `agents.WithActor` is the actor `bot:<id>`, an automation `automation:<id>`.
   Annotations from servers never unlock more than ask, with one exception the user opts into: bot tool access.
+- Bot computer tools (`computer_run`, `computer_read_file`, `computer_write_file`, `browser_*` on `computer/<botID>/...`)
+  are ordinary policy actions for `bot:<id>`; `ask_user_to_take_over` is itself a user prompt. The takeover lock lives
+  in the daemon: while the user holds it, the bot's commands, writes and browser tools are refused, and only then does
+  `sandbox.screen.input` let keyboard and mouse through (`internal/sandbox/rfbfilter.go`). The Computer tab's
+  view-only mode is not a control. See the Bot computers section of `docs/security/threat-model.md`.
 - Bot tool access (`agents.botToolAccess`, per bot `BotConfig.toolAccess`: ask | read | write | all) is the engine's
   auto-approve hook. It lifts only a **default** ask to allow for `bot:<id>` actors up to the chosen effect (`all`
   includes destructive; `read` trusts the server's read-only annotation). Explicit `mcp_permissions` and stored rules

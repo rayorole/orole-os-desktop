@@ -220,6 +220,13 @@ export interface AutostartStatus {
   detail: string;
 }
 
+export interface Availability {
+  ready: boolean;
+  /** "whp-disabled", "virtualization-off", "reboot-required", "runtime-missing", "unsupported-os" */
+  reason?: string;
+  detail?: string;
+}
+
 /** Bot is a contact: identity, brain settings and live status. */
 export interface Bot {
   id: string;
@@ -1161,6 +1168,15 @@ export interface HandOffParams {
   model: string;
   mode: Mode;
   permissionMode: string;
+}
+
+/** HandoffState is the sandbox.handoff event payload and the sandbox.handoff method's answer. */
+export interface HandoffState {
+  botId: string;
+  pending: boolean;
+  reason?: string;
+  /** unix ms */
+  since?: number;
 }
 
 export interface HarnessOption {
@@ -2655,6 +2671,26 @@ export interface RunState {
   paused?: boolean;
 }
 
+/** RuntimeState is what the setup screen shows while the runtime downloads. */
+export interface RuntimeState {
+  ready: boolean;
+  installing: boolean;
+  /** "qemu" or "image" */
+  step?: string;
+  done: number;
+  total: number;
+  error?: string;
+}
+
+export type SandboxState = "off" | "starting" | "running" | "stopping" | "failed";
+
+export interface SandboxStatus {
+  botId: string;
+  state: SandboxState;
+  takenOver: boolean;
+  error?: string;
+}
+
 export interface SaveRequest {
   id: string;
   name: string;
@@ -2675,6 +2711,14 @@ export interface ScopeAccess {
   scope: string;
   read: boolean;
   write: boolean;
+}
+
+/** ScreenChunk is a piece of a bot computer's screen stream; Data is base64. */
+export interface ScreenChunk {
+  id: string;
+  data?: string;
+  closed?: boolean;
+  error?: string;
 }
 
 /** SearchResult is a page of issue/PR search hits. */
@@ -2908,6 +2952,13 @@ export interface SessionUsage {
 export interface SettingChange {
   key: string;
   value: unknown;
+}
+
+/** SetupState is what the setup screen shows while (and after) Windows Hypervisor Platform is turned on. */
+export interface SetupState {
+  running: boolean;
+  rebootRequired: boolean;
+  error?: string;
 }
 
 /**
@@ -4720,6 +4771,75 @@ export const Machines = {
   },
 } as const;
 
+/**
+ * Sandbox is the bound service for a bot's computer, a local Linux VM the daemon runs. It only forwards: the daemon
+ * decides what a viewer may do (keyboard and mouse reach the VM only during a takeover). Setup and the runtime
+ * download run in the daemon and report progress as events (sandbox:setup, sandbox:runtime, sandbox:availability).
+ */
+export const Sandbox = {
+  /** Availability says whether bot computers can run on this PC, and why not. */
+  availability(): Promise<Availability> {
+    return call("Sandbox.Availability");
+  },
+  /** CloseScreen ends a screen stream. */
+  closeScreen(id: string): Promise<void> {
+    return call("Sandbox.CloseScreen", id);
+  },
+  /**
+   * Enable starts turning on Windows Hypervisor Platform through the elevated helper (one UAC prompt, then a
+   * restart). It answers with the setup's result when it ends within about 25 seconds, otherwise with Running set;
+   * the result then arrives as a sandbox:setup event.
+   */
+  enable(): Promise<SetupState> {
+    return call("Sandbox.Enable");
+  },
+  /** Handoff says whether the bot is waiting for the user to take over its computer, and why. */
+  handoff(botID: string): Promise<HandoffState> {
+    return call("Sandbox.Handoff", botID);
+  },
+  /**
+   * Install starts downloading and verifying the VM runtime and the guest image and returns at once with its state;
+   * progress follows as sandbox:runtime events. Calling it again while it runs returns the progress.
+   */
+  install(): Promise<RuntimeState> {
+    return call("Sandbox.Install");
+  },
+  /** OpenScreen starts a live screen stream of a running computer and returns its id; bytes follow as sandbox:screen. */
+  openScreen(botID: string): Promise<string> {
+    return call("Sandbox.OpenScreen", botID);
+  },
+  /** OpenTerminal opens (or returns the open) terminal in the bot's running computer. Use Terminals.* with its id. */
+  openTerminal(botID: string, cols: number, rows: number): Promise<Info> {
+    return call("Sandbox.OpenTerminal", botID, cols, rows);
+  },
+  /**
+   * Release hands the computer back to the bot. note ("" for none, at most 500 characters) reaches a bot that asked
+   * the user to take over.
+   */
+  release(botID: string, note: string): Promise<void> {
+    return call("Sandbox.Release", botID, note);
+  },
+  /**
+   * ScreenInput sends viewer bytes (base64) to a screen, in pieces of at most 128 KiB (the daemon closes a screen
+   * that receives more at once). Pieces go in order; the first failure stops the rest.
+   */
+  screenInput(id: string, data: string): Promise<void> {
+    return call("Sandbox.ScreenInput", id, data);
+  },
+  /** SetViewer renews (true) or ends (false) this window's viewer lease while the Computer tab is visible. */
+  setViewer(botID: string, watching: boolean): Promise<void> {
+    return call("Sandbox.SetViewer", botID, watching);
+  },
+  /** Status is the bot's computer state. */
+  status(botID: string): Promise<SandboxStatus> {
+    return call("Sandbox.Status", botID);
+  },
+  /** TakeOver gives the user the mouse and keyboard; the bot's browser tools wait. */
+  takeOver(botID: string): Promise<void> {
+    return call("Sandbox.TakeOver", botID);
+  },
+} as const;
+
 export const Applications = {
   launch(id: string): Promise<LaunchResult> {
     return call("Applications.Launch", id);
@@ -4818,4 +4938,16 @@ export const events = {
   projectsChanged: event<ProjectRef>("projects:changed"),
   /** WorktreesChanged fires when worktrees of a project were created or removed. */
   worktreesChanged: event<ProjectRef>("worktrees:changed"),
+  /** SandboxStatus fires when a bot's computer changes state or the user takes over or hands back. */
+  sandboxStatus: event<SandboxStatus>("sandbox:status"),
+  /** SandboxScreen carries live screen bytes for an open screen; the last chunk of a stream has Closed set. */
+  sandboxScreen: event<ScreenChunk>("sandbox:screen"),
+  /** SandboxAvailability fires when whether bot computers can run here may have changed (setup or download ended). */
+  sandboxAvailability: event<Availability>("sandbox:availability"),
+  /** SandboxRuntime reports the runtime download's progress and result. */
+  sandboxRuntime: event<RuntimeState>("sandbox:runtime"),
+  /** SandboxSetup reports the Windows Hypervisor Platform setup: running, then its result. */
+  sandboxSetup: event<SetupState>("sandbox:setup"),
+  /** SandboxHandoff fires when a bot starts or stops waiting for the user to take over its computer. */
+  sandboxHandoff: event<HandoffState>("sandbox:handoff"),
 } as const;

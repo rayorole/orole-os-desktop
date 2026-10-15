@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/rayorole/orole-os-desktop/internal/sandbox/wire"
 )
 
 type Config struct {
@@ -20,6 +22,9 @@ type Config struct {
 	FreeMemory  func() (uint64, error) // bytes; injectable for tests; nil skips the check
 	Now         func() time.Time
 	Image       func() (ImageSet, error) // resolves kernel/initrd/base from the installed runtime (phase 2); tests stub it
+	// OnExec, when set, is told about every command a bot's computer ran (the daemon echoes it in the terminal).
+	// Delivery is ordered per bot but never blocks the call: a slow consumer makes events drop.
+	OnExec func(botID string, req wire.ExecRequest, res wire.ExecResult)
 }
 
 type ImageSet struct{ Version, Kernel, Initrd, BaseImage string }
@@ -415,6 +420,9 @@ func (m *Manager) start(ctx context.Context, botID string) (VM, *Guest, error) {
 		m.logf(botID, "the computer failed to start: %q", err.Error())
 		return nil, nil, fmt.Errorf("%w: %v", ErrBootFailed, err)
 	}
+	if m.cfg.OnExec != nil {
+		m.hookExec(botID, vm, g)
+	}
 	return vm, g, nil
 }
 
@@ -595,4 +603,32 @@ func newToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+type execEvent struct {
+	req wire.ExecRequest
+	res wire.ExecResult
+}
+
+// hookExec forwards the guest's exec reports to Config.OnExec through a bounded queue drained by one goroutine
+// that ends with the VM, so a slow or stuck consumer can never delay a bot's command (events drop when full).
+func (m *Manager) hookExec(botID string, vm VM, g *Guest) {
+	onExec := m.cfg.OnExec
+	ch := make(chan execEvent, 64)
+	g.OnExec(func(req wire.ExecRequest, res wire.ExecResult) {
+		select {
+		case ch <- execEvent{req, res}:
+		default:
+		}
+	})
+	go func() {
+		for {
+			select {
+			case ev := <-ch:
+				onExec(botID, ev.req, ev.res)
+			case <-vm.Done():
+				return
+			}
+		}
+	}()
 }

@@ -27,6 +27,44 @@ describe("message parts", () => {
     expect(steps).toEqual(["Thinkingweighing options", "Searched the weboslo flights", "Writing the answer"]);
   });
 
+  it("draws the bot's computer use as one card that opens the Computer tab", () => {
+    useChat.setState({ selectedBotId: "a", pane: null });
+    view(message([
+      { type: "computer", status: "done", text: "Starting computer…" },
+      { type: "text", text: "Opening the site." },
+      { type: "computer", status: "running", text: "browser_open https://example.test" },
+    ]));
+    expect(screen.getAllByText("Using the computer")).toHaveLength(1);
+    expect(screen.getByText("browser_open https://example.test")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Using the computer/ }));
+    expect(useChat.getState().pane).toEqual({ kind: "computer", id: "a" });
+  });
+
+  it.each([["running", "Working"], ["done", "Done"], ["failed", "Failed"], ["waiting", "Waiting for you"]])("labels a %s computer card", (status, label) => {
+    useChat.setState({ selectedBotId: "a", pane: null });
+    view(message([{ type: "computer", status, text: "<b>hi</b>" }]));
+    expect(screen.getByRole("button", { name: /Using the computer/ })).toHaveTextContent(label);
+    expect(screen.getByText("<b>hi</b>")).toBeInTheDocument();
+    if (status === "waiting") expect(screen.getByText("Take over")).toBeInTheDocument();
+    else expect(screen.queryByText("Take over")).toBeNull();
+  });
+
+  it("labels an unknown or inherited status as working", () => {
+    useChat.setState({ selectedBotId: "a", pane: null });
+    view(message([{ type: "computer", status: "toString", text: "step" }]));
+    expect(screen.getByRole("button", { name: /Using the computer/ })).toHaveTextContent("Working");
+  });
+
+  it("shows what the computer did as plain text under the step, unless it repeats it", () => {
+    useChat.setState({ selectedBotId: "a", pane: null });
+    view(message([{ type: "computer", status: "done", text: "Same", summary: "Same" }]));
+    expect(screen.getAllByText("Same")).toHaveLength(1);
+    cleanup();
+    view(message([{ type: "computer", status: "done", text: "Opened site", summary: "<i>Read the page</i>" }]));
+    expect(screen.getByText("<i>Read the page</i>")).toBeInTheDocument();
+    expect(document.querySelector("[data-slot=computer-card] i")).toBeNull();
+  });
+
   it("draws a call part as a call card", () => {
     view(message([{ type: "call", id: "c1", name: "outbound", status: "completed", title: "deploy failed", durationMs: 75_000, summary: "est. $0.15" }]));
     expect(screen.getByText("Called you")).toBeInTheDocument();

@@ -3,7 +3,7 @@ import { useChat } from "@/stores/chat";
 import { openTarget, parseTarget } from "./targets";
 
 const original = useChat.getState().open;
-afterEach(() => useChat.setState({ open: original }));
+afterEach(() => useChat.setState({ open: original, selectedBotId: null, pane: null }));
 
 describe("notification targets", () => {
   it("reads computer targets as a bot's computer", () => {
@@ -13,10 +13,19 @@ describe("notification targets", () => {
     expect(parseTarget("vm:b1")).toBeNull();
   });
 
-  it("opens the bot when its computer needs the user", () => {
+  it("opens only the bot's chat for a bot target", () => {
+    const open = vi.fn();
+    useChat.setState({ open });
+    expect(openTarget("bot:b1")).toBe(true);
+    expect(open).toHaveBeenCalledWith("b1");
+    expect(useChat.getState().pane).toBeNull();
+  });
+
+  it("opens the bot's Computer pane when its computer needs the user", () => {
     const open = vi.fn();
     useChat.setState({ open });
     expect(openTarget("computer:b1")).toBe(true);
     expect(open).toHaveBeenCalledWith("b1");
+    expect(useChat.getState().pane).toEqual({ kind: "computer", id: "b1" });
   });
 });

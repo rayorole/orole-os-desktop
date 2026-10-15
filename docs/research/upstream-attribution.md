@@ -248,6 +248,7 @@ SOFTWARE.
 | MyGo (https://github.com/egoist/mygo) | v0.3.3 | see upstream `LICENSE` | desktop shell, bindings, packaging (`cmd/desktop`, `mygo.json`) |
 | Microsoft/go-winio, UserExistsError/conpty, danieljoos/wincred, modernc.org/sqlite, google/uuid | see `go.mod` | upstream licences | named pipes, ConPTY, Credential Manager, SQLite, ids |
 | @web-kits/audio (https://audio.raphaelsalaja.com/, https://github.com/raphaelsalaja/audio) | npm `0.2.0` | MIT, (c) 2026 Raphael Salaja | shared synthesized UI and in-app notification engine in `frontend/src/lib/audio.ts`; original cue definitions, no copied samples |
+| @novnc/novnc (https://github.com/novnc/noVNC) | npm `1.7.0` (exact) | MPL-2.0 (core); vendored `pako` MIT, see the package's `LICENSE.txt` | the bot computer's screen viewer: RFB over `frontend/src/features/computer/screenChannel.ts` (Orole's own adapter). Bundled unmodified; MPL-2.0 source for these files is the upstream tag `v1.7.0` |
 | @lobehub/icons-static-svg (https://github.com/lobehub/lobe-icons) | npm `1.95.1` | MIT (package declaration), LobeHub | Four unmodified package SVG imports (Claude, OpenAI, Gemini, OpenCode) in `features/agents/ProviderLogo.tsx`; no additional UI framework or remotely loaded logos. Brand marks remain their owners' trademarks. |
 
 ### Lobe Icons license notice

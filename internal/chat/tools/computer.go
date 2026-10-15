@@ -161,7 +161,7 @@ var computerFailures = []struct {
 	{sandbox.ErrTakenOver, "The user is controlling your computer right now. Do not use the computer until they hand it back.", "The user is controlling the computer"},
 	{ErrComputerGone, "You were archived or no longer exist, so you have no computer any more. Do not use the computer tools.", "The bot no longer exists"},
 	{sandbox.ErrDeleting, "Your computer is being deleted. Do not use the computer tools; tell the user.", "The computer is being deleted"},
-	{errors.ErrUnsupported, "This computer runs an older image without this feature. Ask the user to reset the computer in its Computer tab.", "The computer's image is too old"},
+	{errors.ErrUnsupported, "This computer runs an older image without this feature. It updates when your computer is recreated (the user archives you and creates the bot again); tell the user.", "The computer's image is too old"},
 	{context.DeadlineExceeded, "The computer did not answer in time, so the call was stopped. It may still be starting or busy; try again, with a longer timeout for slow commands.", "The computer did not answer in time"},
 }
 

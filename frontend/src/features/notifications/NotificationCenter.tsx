@@ -46,7 +46,7 @@ function sourceIcon(item: NotificationItem): Icon {
 /** The thing that reported, with the kind as a small badge on its corner. Messages show a tinted tile instead. */
 function Mark({ item }: { item: NotificationItem }) {
   const target = parseTarget(item.target);
-  const bot = useChat((s) => target?.type === "bot" ? s.bots.find((b) => b.id === target.id) : undefined);
+  const bot = useChat((s) => target?.type === "bot" || target?.type === "computer" ? s.bots.find((b) => b.id === target.id) : undefined);
   const kind = kindOf(item);
   if (item.kind === "message") {
     const Glyph = item.level === "warning" || item.level === "error" ? TriangleAlert : sourceIcon(item);

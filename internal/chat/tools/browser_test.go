@@ -339,7 +339,7 @@ func TestBrowserErrorsAndCancel(t *testing.T) {
 		t.Fatalf("guest error: %+v %v %+v", res, err, cards)
 	}
 	res, _ = Browser{Runtime: &fakeComputer{running: true, err: errors.ErrUnsupported}, Policy: &computerPolicy{}}.Call(context.Background(), pcRun(nil), BrowserReadName, json.RawMessage(`{}`))
-	if !res.IsError || res.Untrusted || !strings.Contains(res.Text, "older image") {
+	if !res.IsError || res.Untrusted || !strings.Contains(res.Text, "older image") || strings.Contains(res.Text, "reset") || !strings.Contains(res.Text, "recreated") {
 		t.Fatalf("old image: %+v", res)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

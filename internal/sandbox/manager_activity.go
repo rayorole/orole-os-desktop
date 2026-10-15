@@ -66,6 +66,18 @@ func (m *Manager) Release(botID string) {
 	m.publish(st)
 }
 
+// RunningGuest returns the bot's guest when its VM is running and its channel is alive. Unlike Ensure it never boots
+// a VM and is not bot activity: the Computer tab uses it, and only bots start their computers.
+func (m *Manager) RunningGuest(botID string) (*Guest, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	inst := m.vms[botID]
+	if inst == nil || inst.state != StateRunning || !inst.guest.alive() {
+		return nil, false
+	}
+	return inst.guest, true
+}
+
 func (m *Manager) TakenOver(botID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
