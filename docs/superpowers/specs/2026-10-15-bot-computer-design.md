@@ -54,8 +54,8 @@ New package `internal/sandbox`:
   directories; a partial or mismatched download is deleted.
 - `Setup`: WHP detection without admin; launches `orole-sandbox-setup.exe` (new `cmd/orole-sandbox-setup`) with UAC
   to enable the feature; reports "reboot needed".
-- Guest channel: QEMU virtio-serial chardev on a named pipe with the same user-only DACL as `internal/ipc`;
-  framed, multiplexed streams (`exec`, `files`, `pty`, `screen`, `browser`) authenticated with a per-VM random
+- Guest channel: QEMU virtio-serial chardev connected to a local AF_UNIX socket in the user-only data dir (fallback: a named pipe with the same user-only DACL as `internal/ipc`); HTTP/2 (h2c) over that stream gives
+  multiplexed streams (`exec`, `files`, `pty`, `screen`, `browser`) authenticated with a per-VM random
   token injected at boot (kernel command line or a one-time first frame).
 - Storage: `<data>\sandbox\runtime\<version>\` (QEMU), `<data>\sandbox\images\<version>\` (base image),
   `<data>\sandbox\bots\<bot-id>.qcow2` (overlay), `logs/sandbox-<bot-id>.log` (QEMU stderr, guest console).
@@ -68,7 +68,7 @@ New package `internal/sandbox`:
 
 - `orole-guest` (Go, new `cmd/orole-guest`, built for linux/amd64 and baked into the image): serves the stream
   types above. `exec` with timeout and output cap; `files` read/write within the guest; `pty` for the terminal;
-  `screen` relays the local VNC server; `browser` drives Chromium via Playwright/CDP.
+  `screen` relays the local VNC server; `browser` drives Chromium via CDP (chromedp).
 - Desktop: a minimal Wayland compositor with a single visible Chromium using a persistent profile on the overlay;
   VNC server bound to localhost inside the guest only.
 - Preinstalled: Python 3, Node, git, curl, jq, ripgrep and common CLI tools; nix-ld enabled so vendor binaries run.

@@ -108,7 +108,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y tmux
       # Native Linux PTY/tmux joins the portable lane; this is not a Linux desktop release.
       - name: Go test (race), portable packages and Linux terminals
-        run: go test -race ./internal/ipc/... ./internal/database/... ./internal/platform/... ./internal/paths/... ./internal/credentials/... ./internal/terminals/...
+        run: go test -race ./internal/ipc/... ./internal/database/... ./internal/platform/... ./internal/paths/... ./internal/credentials/... ./internal/terminals/... ./internal/sandbox/... ./cmd/orole-guest/...
+
+      # The guest agent ships inside the Linux VM image: it must build static for linux/amd64.
+      - name: Build orole-guest (linux/amd64, static)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/orole-guest" ./cmd/orole-guest
 
       - name: orole-cli must not link daemon/sqlite/ssh/MCP
         run: ./scripts/check-cli-linkage.sh

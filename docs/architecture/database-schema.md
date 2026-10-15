@@ -1,7 +1,7 @@
 # Database schema
 
 SQLite via `modernc.org/sqlite` (pure Go, no cgo). File: `<data dir>/orole.db`. The SQL in `migrations/*.sql`
-is authoritative; this page summarises it. Migrations present in this tree: `0001`, `0010`, `0020`, `0030`, `0050`, and the chat series `0096`-`0111`.
+is authoritative; this page summarises it. Migrations present in this tree: `0001`, `0010`, `0020`, `0030`, `0050`, the chat series `0096`-`0111`, and `0112`.
 
 ## Connection and migrations
 
@@ -51,6 +51,12 @@ Tables for agents, MCP, policy and notifications exist ahead of the daemon servi
 The global phone settings are JSON under the `jarvis` settings key and the daemon's last scheduler tick under
 `jarvis.state` (neither writable through `settings.set`); per-bot Jarvis options live in the bot's config JSON. Twilio,
 ElevenLabs and relay credentials are in Credential Manager, never here. See `jarvis.md`.
+
+## Bot computers (migration 0112)
+
+| Table | Purpose |
+|---|---|
+| `sandboxes(bot_id PK, image_version, overlay_path, limits JSON, last_used_at, created_at)` | one row per bot that has a computer (a local VM): the guest image version its overlay was made from, the overlay disk path, per-bot limits (`{"memoryMB","cpus","diskGB"}`, zero = default) and times in Unix ms. Run state is in memory only. No foreign key to `bots`: `sandbox.Manager.Delete` removes the overlay file and the row together. See `bot-computer.md`. |
 
 ## Secrets
 
