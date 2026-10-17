@@ -710,7 +710,7 @@ export interface DailyUsage {
   day: string;
   /** sessions started that day */
   sessions: number;
-  /** total tokens */
+  /** TokenTotals.Work: cache reads excluded */
   tokens: number;
   costUsd: number;
 }
@@ -2905,10 +2905,17 @@ export interface Session {
    */
   subagents?: number;
   /**
-   * Tokens is what the session's model requests used: input, output, cache reads and cache
-   * writes. Billed reports settle it; while a turn runs it includes the harness's live estimates.
+   * Tokens is the session's headline token count: input, cache writes and output of its model
+   * requests (Billed.Work). Cache reads, the context re-sent on every request, are left out:
+   * they dwarf the rest. Billed reports settle it; while a turn runs it includes the harness's
+   * live estimates.
    */
   tokens?: number;
+  /**
+   * Billed breaks down the billed tokens, cache reads included, and their cost. It excludes the
+   * running turn's estimates; nil until the first billed report.
+   */
+  billed?: TokenTotals;
   /** Pending are the permission requests awaiting a decision (runtime state). */
   pending: PermissionRequest[];
   usage?: ContextUsage;
@@ -2946,6 +2953,7 @@ export interface SessionDelta {
   toolCalls?: number;
   failedTools?: number;
   tokens?: number;
+  billed?: TokenTotals;
   usage?: ContextUsage;
 }
 
@@ -3259,6 +3267,11 @@ export interface TokenTotals {
   reasoning: number;
   /** input + output + cacheRead + cacheWrite */
   total: number;
+  /**
+   * Work is input + cacheWrite + output: Total without cache reads, the context re-sent on every
+   * request, which dwarf the rest. Every token headline shows Work.
+   */
+  work: number;
   /** harness-reported cost where given, else catalogue price; unpriced tokens add 0 */
   costUsd: number;
   /**

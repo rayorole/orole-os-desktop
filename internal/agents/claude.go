@@ -682,7 +682,7 @@ func decodeClaudeMessage(p *pipeProc, m claudeMsg) []Event {
 		// Billing waits for the turn's result; meanwhile each request's usage (subagents' too,
 		// which modelUsage bills as well) keeps the session's token count live.
 		if u := m.Message.Usage; u != nil && m.Message.ID != "" {
-			n := max(valueOr0(u.Input), 0) + max(valueOr0(u.Cached), 0) + max(valueOr0(u.CacheCreation), 0) + max(valueOr0(u.Output), 0)
+			n := max(valueOr0(u.Input), 0) + max(valueOr0(u.CacheCreation), 0) + max(valueOr0(u.Output), 0)
 			if n > 0 {
 				out = append(out, Event{Kind: EvTokenEstimate, Data: jraw(TokenEstimate{ID: m.Message.ID, Tokens: n})})
 			}

@@ -175,40 +175,91 @@ func ledger(t *testing.T, m *Manager) map[usageKey]usageAmount {
 	return out
 }
 
-// The session's token count moves with each request's estimate while a Claude turn runs, a
-// repeated reading of one request is not added again, and the turn's billing replaces the
-// estimates rather than adding to them.
+// The session's token count leaves cache reads out and moves with each request's estimate while a
+// Claude turn runs; a repeated reading of one request is not added again, and the turn's billing
+// replaces the estimates rather than adding to them. Billed keeps the full breakdown.
 func TestSessionTokensLiveThenSettledByBilling(t *testing.T) {
 	m, _, _ := chatFixture(t, StatusWorking)
 	d := &claudeDecoder{tools: make(map[string]ToolData)}
-	tokens := func() int64 {
+	get := func() Session {
 		s, err := m.Get("chat")
 		if err != nil {
 			t.Fatal(err)
 		}
-		return s.Tokens
+		return s
 	}
+	tokens := func() int64 { return get().Tokens }
 	feed := func(line string) {
 		for _, e := range d.decode(nil, []byte(line)) {
 			m.apply("chat", e)
 		}
 	}
 	feed(`{"type":"assistant","parent_tool_use_id":null,"message":{"id":"m1","usage":{"input_tokens":2,"cache_read_input_tokens":900,"cache_creation_input_tokens":100,"output_tokens":8},"content":[{"type":"text","text":"a"}]}}`)
-	if got := tokens(); got != 1010 {
+	if got := tokens(); got != 110 {
 		t.Fatalf("after first request: %d", got)
 	}
 	feed(`{"type":"assistant","parent_tool_use_id":null,"message":{"id":"m1","usage":{"input_tokens":2,"cache_read_input_tokens":900,"cache_creation_input_tokens":100,"output_tokens":50},"content":[{"type":"text","text":"b"}]}}`)
 	feed(`{"type":"assistant","parent_tool_use_id":"call","message":{"id":"sub1","usage":{"input_tokens":500},"content":[{"type":"text","text":"c"}]}}`)
-	if got := tokens(); got != 1552 {
+	if got := tokens(); got != 652 {
 		t.Fatalf("repeated reading and subagent request: %d", got)
 	}
-	feed(`{"type":"result","subtype":"success","model":"claude-sonnet-5-5","result":"done","modelUsage":{"claude-sonnet-5-5":{"inputTokens":600,"outputTokens":60,"cacheReadInputTokens":900,"cacheCreationInputTokens":100}}}`)
-	if got := tokens(); got != 1660 {
-		t.Fatalf("billed turn: %d", got)
+	if b := get().Billed; b != nil {
+		t.Fatalf("estimates reached the billed breakdown: %+v", b)
 	}
-	feed(`{"type":"assistant","parent_tool_use_id":null,"message":{"id":"m2","usage":{"input_tokens":40},"content":[{"type":"text","text":"d"}]}}`)
-	if got := tokens(); got != 1700 {
-		t.Fatalf("next turn adds to the billed total: %d", got)
+	feed(`{"type":"result","subtype":"success","model":"claude-sonnet-5-5","result":"done","modelUsage":{"claude-sonnet-5-5":{"inputTokens":600,"outputTokens":60,"cacheReadInputTokens":900,"cacheCreationInputTokens":100,"costUSD":0.5}}}`)
+	s := get()
+	if s.Tokens != 760 {
+		t.Fatalf("billed turn: %d", s.Tokens)
+	}
+	if b := s.Billed; b == nil || b.Input != 600 || b.Output != 60 || b.CacheRead != 900 || b.CacheWrite != 100 || b.Total != 1660 || b.Work != 760 ||
+		!near(b.CostUSD, 0.5) || b.Unpriced == nil || len(b.Unpriced) != 0 {
+		t.Fatalf("billed breakdown: %+v", b)
+	}
+	feed(`{"type":"assistant","parent_tool_use_id":null,"message":{"id":"m2","usage":{"input_tokens":40,"cache_read_input_tokens":1000},"content":[{"type":"text","text":"d"}]}}`)
+	if s := get(); s.Tokens != 800 || s.Billed.Work != 760 {
+		t.Fatalf("next turn adds to the billed total: %d, billed %+v", s.Tokens, s.Billed)
+	}
+	// A model without a reported cost or a catalogue price makes the cost a lower bound.
+	m.apply("chat", Event{Kind: EvTokens, Data: jraw(TokenUsage{Provider: "local", Model: "llama", Input: 5})})
+	if b := get().Billed; b.Work != 765 || !near(b.CostUSD, 0.5) || !slices.Equal(b.Unpriced, []string{"local/llama"}) {
+		t.Fatalf("unpriced model: %+v", b)
+	}
+}
+
+// Sessions saved before Billed existed counted cache reads in Tokens: recovery rebuilds both
+// from the ledger, and leaves sessions that have a breakdown alone.
+func TestRecoverBackfillsBilledFromLedger(t *testing.T) {
+	m, _, _ := chatFixture(t, StatusDone)
+	cost := 0.25
+	m.apply("chat", Event{Kind: EvTokens, Data: jraw(TokenUsage{Input: 10, Output: 20, CacheRead: 900, CacheWrite: 70, CostUSD: &cost})})
+	s, err := m.Get("chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Billed, s.Tokens = nil, 1000
+	if err := m.st.SaveSession(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Recover(); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := m.st.GetSession("chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := stored.Billed; stored.Tokens != 100 || b == nil || b.Input != 10 || b.Output != 20 || b.CacheRead != 900 || b.CacheWrite != 70 ||
+		b.Total != 1000 || b.Work != 100 || !near(b.CostUSD, 0.25) {
+		t.Fatalf("backfilled: tokens %d, billed %+v", stored.Tokens, b)
+	}
+	stored.Tokens = 140 // a newer session's live count is not recomputed
+	if err := m.st.SaveSession(stored, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Recover(); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := m.st.GetSession("chat"); again.Tokens != 140 {
+		t.Fatalf("session with a breakdown was backfilled again: %d", again.Tokens)
 	}
 }
 
@@ -336,7 +387,7 @@ func TestBuildUsageStatsWindows(t *testing.T) {
 		!slices.Equal(st.Week.Agents, []string{"claude", "codex", "gemini"}) {
 		t.Fatalf("week: %+v", st.Week)
 	}
-	if st.All.Sessions != 5 || st.All.Tokens.Total != 5_000_600 || !near(st.All.Tokens.CostUSD, 110.25+21) || st.All.ActiveDays != 4 ||
+	if st.All.Sessions != 5 || st.All.Tokens.Total != 5_000_600 || st.All.Tokens.Work != 4_000_600 || !near(st.All.Tokens.CostUSD, 110.25+21) || st.All.ActiveDays != 4 ||
 		!slices.Equal(st.All.Tokens.Unpriced, []string{"local/llama", "omp/mystery"}) {
 		t.Fatalf("all: %+v", st.All)
 	}
@@ -354,7 +405,7 @@ func TestBuildUsageStatsWindows(t *testing.T) {
 		t.Fatalf("30 days ago: %+v", d)
 	}
 	if len(st.Latest) != 3 || st.Latest[0].Title != "Fix the build" || st.Latest[0].Provider != "openai" || st.Latest[0].ToolCalls != 4 || st.Latest[0].FailedTools != 1 ||
-		!near(st.Latest[0].Tokens.CostUSD, 0.25) || st.Latest[1].Title != "Named" || st.Latest[1].Tokens.Total != 4_000_000 ||
+		!near(st.Latest[0].Tokens.CostUSD, 0.25) || st.Latest[1].Title != "Named" || st.Latest[1].Tokens.Total != 4_000_000 || st.Latest[1].Tokens.Work != 3_000_000 ||
 		st.Latest[2].Title != "app" || st.Latest[2].Tokens.Total != 0 || st.Latest[2].Tokens.Unpriced == nil {
 		t.Fatalf("latest: %+v", st.Latest)
 	}
@@ -363,6 +414,15 @@ func TestBuildUsageStatsWindows(t *testing.T) {
 	}
 	if all := buildUsageStats(now, loc, UsageQuery{ByAgentRange: "all"}, rows, starts, recent, statsCatalog(t)); len(all.ByAgent) != 4 || all.ByAgent[0].Kind != "claude" || all.ByAgent[0].Sessions != 2 {
 		t.Fatalf("byAgent all: %+v", all.ByAgent)
+	}
+	// Agents rank by the headline, which leaves cache reads out, and days chart it.
+	cached := []usageRow{
+		row("c2", "claude", "anthropic", "claude-opus-4-1", time.Hour, usageAmount{input: 1, cacheRead: 5_000_000}),
+		row("x2", "codex", "openai", "gpt-5", time.Hour, usageAmount{input: 10}),
+	}
+	if day := buildUsageStats(now, loc, UsageQuery{}, cached, nil, nil, statsCatalog(t)); len(day.ByAgent) != 2 || day.ByAgent[0].Kind != "codex" ||
+		day.ByAgent[1].Tokens.Work != 1 || day.ByAgent[1].Tokens.Total != 5_000_001 || day.Daily[364].Tokens != 11 {
+		t.Fatalf("cache reads ranked or charted: %+v %+v", day.ByAgent, day.Daily[364])
 	}
 }
 
