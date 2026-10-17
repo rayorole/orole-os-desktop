@@ -1,7 +1,7 @@
 {
   "name": "Orole OS",
   "identifier": "be.orole.os",
-  "version": "0.4.2-dev",
+  "version": "0.4.3-dev",
   "copyright": "Copyright (c) 2026 Orole",
   "main": "./cmd/desktop",
   "devUrl": "http://localhost:5173",
