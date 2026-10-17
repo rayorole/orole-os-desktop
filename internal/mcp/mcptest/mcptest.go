@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,9 @@ type Options struct {
 	// ModernOnly serves only the stateless 2026-07-28 protocol, like Orole Drive and Mail,
 	// which reject the legacy initialize handshake with UnsupportedProtocolVersion.
 	ModernOnly bool
+	// KeyHeader makes the MCP endpoint take its token from this header instead of
+	// Authorization: Bearer, like Similarweb's api-key header.
+	KeyHeader string
 }
 
 // AuthzRequest records one authorization request.
@@ -235,13 +239,21 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "redirect_uri must be loopback", http.StatusBadRequest)
 		return
 	}
+	rq := ru.Query()
+	rq.Set("state", a.State)
+	for _, sc := range strings.Fields(a.Scope) {
+		if sc != "openid" && sc != "offline_access" && !slices.Contains(s.opts.Scopes, sc) {
+			rq.Set("error", "invalid_scope") // like real servers, refuse a scope it never advertised
+			ru.RawQuery = rq.Encode()
+			http.Redirect(w, r, ru.String(), http.StatusFound)
+			return
+		}
+	}
 	code := rnd(16)
 	s.mu.Lock()
 	s.codes[code] = codeInfo{a.ClientID, a.RedirectURI, a.Challenge, a.Resource, a.Scope}
 	s.mu.Unlock()
-	rq := ru.Query()
 	rq.Set("code", code)
-	rq.Set("state", a.State)
 	if !s.opts.NoIssParam {
 		rq.Set("iss", s.Issuer)
 	}
@@ -346,6 +358,9 @@ func (s *Server) bearer(next http.Handler) http.Handler {
 			return
 		}
 		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if s.opts.KeyHeader != "" {
+			tok = r.Header.Get(s.opts.KeyHeader)
+		}
 		s.mu.Lock()
 		ti, ok := s.access[tok]
 		valid := ok && tok != "" && time.Now().Before(ti.expires) && ti.resource == s.MCPURL

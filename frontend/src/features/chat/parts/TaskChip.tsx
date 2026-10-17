@@ -4,6 +4,7 @@ import { formatElapsed } from "@/components/assistant-ui/elements/working-status
 import type { AgentsStatus, MsgPart, Session } from "@/mygo";
 import { ProviderLogo } from "@/features/agents/ProviderLogo";
 import { kindLabel, sessionTitle } from "@/features/agents/format";
+import { WithTokenBreakdown } from "@/features/agents/TokenBreakdown";
 import { useHarnessOptions } from "@/features/agents/useHarnessOptions";
 import { cn } from "@/lib/utils";
 import { useChat } from "@/stores/chat";
@@ -53,7 +54,10 @@ function useNow(live: boolean): number {
   return now;
 }
 
-/** Model, elapsed time and tokens of a task as a compact live meter; a reading the daemon has not reported shows a dash. Elapsed and tokens freeze once the task stops. */
+/**
+ * Model, elapsed time and tokens of a task as a compact live meter; a reading the daemon has not reported shows a dash. Elapsed and
+ * tokens freeze once the task stops. Tokens leave cache reads out; hovering them shows the billed breakdown.
+ */
 function TaskMeter({ session }: { session: Session }) {
   const now = useNow(isTaskLive(session));
   const seconds = taskElapsedSeconds(session, now);
@@ -70,9 +74,9 @@ function TaskMeter({ session }: { session: Session }) {
     <span data-slot="task-elapsed" className={item}>
       <TimerIcon aria-hidden className="size-3 shrink-0" /><span className="sr-only">Elapsed: </span>{seconds === undefined ? NO_VALUE : formatElapsed(seconds)}
     </span>
-    <span data-slot="task-tokens" className={item}>
+    <WithTokenBreakdown totals={session.billed} pending={(tokens ?? 0) - (session.billed?.work ?? 0)} render={<span data-slot="task-tokens" className={item} />}>
       <CoinsIcon aria-hidden className="size-3 shrink-0" /><span className="sr-only">Tokens: </span>{tokens ? formatTokens(tokens) : NO_VALUE}
-    </span>
+    </WithTokenBreakdown>
   </div>;
 }
 

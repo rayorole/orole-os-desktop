@@ -275,7 +275,9 @@ Settings > Skills and Settings > Integrations (connectors and MCP servers in one
   `auth_required` (`useConnect.ts`). "Custom connector" takes only a name and URL. Registered servers appear under
   Connected with Manage, which opens `features/mcp/ServerDetail.tsx`: logo, Reauthenticate/Sign in, Disconnect, tool chips (click to turn a tool off), server URL, and a closed Advanced section (OAuth client, per-tool permission levels, diagnostics). Directory
   entries must answer 401 with protected-resource metadata and offer dynamic client registration; servers needing a
-  pre-registered client go through Custom connector and Manage. The old Settings > MCP section id still resolves here.
+  pre-registered client go through Custom connector and Manage. An entry with `apiKey` (Similarweb, whose OAuth server
+  refuses loopback redirects) opens `ApiKeyConnectorDialog` instead and adds a `bearer` server with that entry's
+  `tokenHeader`. The old Settings > MCP section id still resolves here.
   Mail and Drive embed `MCPSettings` (adapter mode) in their setup screens.
   Configuration search, palette commands, onboarding links and the status-bar button open this section.
   The custom dialog form uses `display: contents` so its scrollable body and footer participate in the popup's
@@ -346,7 +348,8 @@ muted "Starting…" (or "Failed") row. Several launches can be pending at once; 
   is happening now (the call in flight, else the harness's activity line, else the latest step) with a ticking elapsed
   time while the turn runs, `Needs your input` while it waits, or `Worked for 2m 13s` (first to last event of the turn,
   omitted when under a second or unknown) with failed/stopped/incomplete variants; the last run also shows the session's
-  token count (per-turn and per-agent tokens are not recorded, so no node shows any). Under it, the main agent's node holds
+  token count, cache reads excluded, with the billed breakdown on hover (per-turn and per-agent tokens are not recorded,
+  so no node shows any). Under it, the main agent's node holds
   every step in recorded order: thoughts (title, body on expand), the messages it writes while working (live, compact,
   long ones folded), tool call cards, terminal results, sources, decided approvals and answered questions, and the plan
   (`AgentTodos`) where it was first written, with each plan step's work nested in it. Subagents (`subagent` events) hang
@@ -444,7 +447,7 @@ The sidebar offers Home, Tasks (view id `agents`), Review, Automations and Setti
 editors and scrolling. Native deep links use `orole://open/settings/skills` and `orole://open/settings/mcp`;
 the allowlist is in `internal/applications/navigation.go`. Under the rows, the
 project tree expands each project to its **tasks**: dashboard-visible sessions associated by `Session.projectId`
-on the same machine, newest first, with status dots and "Needs you" or "Failed" badges. Older sessions without
+on the same machine, pinned first, then newest created (`startedAt`, id as tie-breaker; never activity, so rows stay put while tasks run), with status dots and "Needs you" or "Failed" badges. Older sessions without
 an ID still match their `Session.project` folder (`features/projects/tasks.ts`). Folderless projects offer
 "Start a task" immediately; they use a persistent daemon-owned workspace, not a user-selected folder.
 Worktrees are an implementation detail of a task; there is no worktree view. "Open tasks" filters the
@@ -550,7 +553,9 @@ attachments are mutually exclusive, as in the daemon.
 `Conversation.tsx` is a `ThreadPrimitive` view: it scrolls back (older pages load near the top without moving
 the reader), sticks to the bottom while following a stream, announces "Responding"/"Done" in a polite live
 region, and dims queued user messages ("Queued"). `Composer.tsx`: Enter sends, Shift+Enter inserts a newline, IME
-composition never sends; Send stays available while a reply runs (the daemon queues the message) next to Stop;
+composition never sends; Send stays available while a reply runs (the daemon queues the message) next to Stop; the
+dictation button stays beside Send whatever the draft holds (a transcript is appended to it), and is hidden only while a
+reply runs, except for a recording already under way, which keeps its control;
 the `+` menu holds Attach files, Research mode, read-only tool chips and Bot settings. There is no @mention picker
 (the daemon has no routing for it). `parts/` holds the pure message renderers shared with the bot builder's live
 preview (`ChatMessageView`, `MessageParts`), so a preview draws exactly what the conversation draws.

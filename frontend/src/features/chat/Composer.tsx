@@ -210,7 +210,8 @@ export const Composer = memo(function Composer({ bot, running }: { bot: Bot; run
           </Badge>}
           <div className="ms-auto flex min-w-0 items-center gap-1">
             {running && <FooterButton label="Stop" variant={hasContent ? "ghost" : "secondary"} className="rounded-full" onClick={() => void useChatMessages.getState().cancel(bot.id)}><SquareIcon aria-hidden className="fill-current" /></FooterButton>}
-            {!running && (!hasContent || dictating) && <ComposerVoice compact quiet disabled={false} onActiveChange={setDictating} onTranscript={addDictation} />}
+            {/* Dictation stays offered next to Send whatever the draft holds (a transcript is appended to it). It is hidden while a reply runs, except for a recording that is already going: unmounting that would lose it. */}
+            {(!running || dictating) && <ComposerVoice compact quiet disabled={false} onActiveChange={setDictating} onTranscript={addDictation} />}
             {hasContent && !dictating && <FooterButton label={running ? "Queue message" : "Send message"} className="rounded-full" disabled={!canSend} onClick={send}><ArrowUpIcon aria-hidden /></FooterButton>}
           </div>
         </div>

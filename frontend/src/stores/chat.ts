@@ -197,7 +197,8 @@ export const useChat = create<ChatState>((set, get) => ({
         if (state.link === "connected" && previous.link !== "connected") refresh();
         if (state.link === "offline" && previous.link !== "offline") {
           ++sequence;
-          set({ ready: false, loading: false, error: "The daemon is offline. Reconnect to chat with your bots." });
+          // Run events sent while the link is down never arrive; the list fetched on reconnect says what is running.
+          set({ ready: false, loading: false, running: {}, error: "The daemon is offline. Reconnect to chat with your bots." });
         }
       });
       const offFocus = onFocusRefresh(refresh);

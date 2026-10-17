@@ -37,6 +37,7 @@ prefixes (0010, 0020, ...) so concurrent work does not collide; `DB.Version()` i
 | `automation_signals(bot_id FK cascade, key, label, count, days, last_day, first_at, last_at, offered_at, offers, dismissed_until)`, primary key `(bot_id, key)` | 0106 | requests a bot noticed the user repeating (same tool call on separate days) that it may offer to automate; rate-limited and silenced once answered |
 | `messages.finished_at` | 0107 | Unix ms when a chat message reached a final status (`complete \| incomplete \| error \| canceled`), set once; 0 while pending/running and for messages finished before 0107 (the UI's "Thought for" duration) |
 | `messages.call_id` + partial index `idx_messages_call(call_id, seq) WHERE call_id <> ''` | 0110 | the Jarvis call a spoken turn belongs to; `''` for every other message (and calls before 0110). Such messages are in the bot's model history and memory but excluded from chat paging, previews and chat events; `jarvis.calls.transcript` reads them by call id |
+| `mcp_servers.token_header` | 0113 | header that carries a `bearer` server's static token: `''` sends `Authorization: Bearer <token>`, a name such as `api-key` (Similarweb) sends `<name>: <token>` instead; set when the server is added. The token stays in Credential Manager |
 
 Tables for agents, MCP, policy and notifications exist ahead of the daemon services that use them; see
 `daemon.md` for what is actually registered.

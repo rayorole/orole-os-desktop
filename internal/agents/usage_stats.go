@@ -31,16 +31,31 @@ type UsageQuery struct {
 
 // TokenTotals sums billed tokens and their cost.
 type TokenTotals struct {
-	Input      int64   `json:"input"`  // uncached input tokens
-	Output     int64   `json:"output"` // includes reasoning
-	CacheRead  int64   `json:"cacheRead"`
-	CacheWrite int64   `json:"cacheWrite"`
-	Reasoning  int64   `json:"reasoning"` // informational subset of Output
-	Total      int64   `json:"total"`     // input + output + cacheRead + cacheWrite
-	CostUSD    float64 `json:"costUsd"`   // harness-reported cost where given, else catalogue price; unpriced tokens add 0
+	Input      int64 `json:"input"`  // uncached input tokens
+	Output     int64 `json:"output"` // includes reasoning
+	CacheRead  int64 `json:"cacheRead"`
+	CacheWrite int64 `json:"cacheWrite"`
+	Reasoning  int64 `json:"reasoning"` // informational subset of Output
+	Total      int64 `json:"total"`     // input + output + cacheRead + cacheWrite
+	// Work is input + cacheWrite + output: Total without cache reads, the context re-sent on every
+	// request, which dwarf the rest. Every token headline shows Work.
+	Work    int64   `json:"work"`
+	CostUSD float64 `json:"costUsd"` // harness-reported cost where given, else catalogue price; unpriced tokens add 0
 	// Unpriced lists distinct "provider/model" (or "kind/model") with tokens but no reported cost
 	// and no catalogue price: CostUSD is then a lower bound.
 	Unpriced []string `json:"unpriced"`
+}
+
+// add folds one ledger amount and its cost into t; Unpriced is left to the caller.
+func (t *TokenTotals) add(a usageAmount, cost float64) {
+	t.Input += a.input
+	t.Output += a.output
+	t.CacheRead += a.cacheRead
+	t.CacheWrite += a.cacheWrite
+	t.Reasoning += a.reasoning
+	t.Total += a.input + a.output + a.cacheRead + a.cacheWrite
+	t.Work += a.work()
+	t.CostUSD += cost
 }
 
 // UsageWindow summarises one time window.
@@ -55,7 +70,7 @@ type UsageWindow struct {
 type DailyUsage struct {
 	Day      string  `json:"day"`      // local date "2006-01-02"
 	Sessions int     `json:"sessions"` // sessions started that day
-	Tokens   int64   `json:"tokens"`   // total tokens
+	Tokens   int64   `json:"tokens"`   // TokenTotals.Work: cache reads excluded
 	CostUSD  float64 `json:"costUsd"`
 }
 
@@ -143,6 +158,7 @@ type usagePricer struct {
 	cache map[[2]string]*pricing.Price
 }
 
+// price returns provider/model's catalogue price, or nil. A pricer without a cache looks up each time.
 func (p *usagePricer) price(provider, model string) *pricing.Price {
 	k := [2]string{provider, model}
 	if v, ok := p.cache[k]; ok {
@@ -152,8 +168,25 @@ func (p *usagePricer) price(provider, model string) *pricing.Price {
 	if price, ok := p.cat.Lookup(provider, model); ok {
 		v = &price
 	}
-	p.cache[k] = v
+	if p.cache != nil {
+		p.cache[k] = v
+	}
 	return v
+}
+
+// cost prices a ledger amount of kind's provider/model: the harness-reported cost when every
+// increment carried one, else the catalogue price. unpriced labels tokens with neither.
+func (p *usagePricer) cost(a usageAmount, kind, provider, model string) (cost float64, unpriced string) {
+	if a.hasReportedCost {
+		return a.reportedCost, ""
+	}
+	if price := p.price(provider, model); price != nil {
+		return price.Cost(pricing.Tokens{Input: a.input, Output: a.output, CacheRead: a.cacheRead, CacheWrite: a.cacheWrite}), ""
+	}
+	if a.input+a.output+a.cacheRead+a.cacheWrite > 0 {
+		return 0, usageLabel(provider, kind, model)
+	}
+	return 0, ""
 }
 
 // usageAcc accumulates TokenTotals; unpriced collects labels until finish.
@@ -166,13 +199,7 @@ func (a *usageAcc) add(r usageRow, cost float64, unpriced string) {
 	if a.unpriced == nil {
 		a.unpriced = map[string]bool{}
 	}
-	a.t.Input += r.amount.input
-	a.t.Output += r.amount.output
-	a.t.CacheRead += r.amount.cacheRead
-	a.t.CacheWrite += r.amount.cacheWrite
-	a.t.Reasoning += r.amount.reasoning
-	a.t.Total += r.amount.input + r.amount.output + r.amount.cacheRead + r.amount.cacheWrite
-	a.t.CostUSD += cost
+	a.t.add(r.amount, cost)
 	if unpriced != "" {
 		a.unpriced[unpriced] = true
 	}
@@ -216,7 +243,7 @@ func (w *windowAcc) agents() []AgentUsage {
 		out = append(out, *a)
 	}
 	slices.SortFunc(out, func(a, b AgentUsage) int {
-		return cmp.Or(cmp.Compare(b.Tokens.Total, a.Tokens.Total), cmp.Compare(a.Kind, b.Kind))
+		return cmp.Or(cmp.Compare(b.Tokens.Work, a.Tokens.Work), cmp.Compare(b.Tokens.Total, a.Tokens.Total), cmp.Compare(a.Kind, b.Kind))
 	})
 	return out
 }
@@ -258,16 +285,8 @@ func buildUsageStats(now time.Time, loc *time.Location, q UsageQuery, rows []usa
 
 	perSession := map[string]*usageAcc{}
 	for _, r := range rows {
-		cost, unpriced := r.amount.reportedCost, ""
+		cost, unpriced := pricer.cost(r.amount, r.kind, r.key.provider, r.key.model)
 		tokens := r.amount.input + r.amount.output + r.amount.cacheRead + r.amount.cacheWrite
-		if !r.amount.hasReportedCost {
-			cost = 0
-			if p := pricer.price(r.key.provider, r.key.model); p != nil {
-				cost = p.Cost(pricing.Tokens{Input: r.amount.input, Output: r.amount.output, CacheRead: r.amount.cacheRead, CacheWrite: r.amount.cacheWrite})
-			} else if tokens > 0 {
-				unpriced = usageLabel(r.key.provider, r.kind, r.key.model)
-			}
-		}
 		start := time.Unix(r.key.start, 0)
 		local := start.In(loc).Format(time.DateOnly)
 		for _, w := range windows {
@@ -282,7 +301,7 @@ func buildUsageStats(now time.Time, loc *time.Location, q UsageQuery, rows []usa
 			}
 		}
 		if i, ok := dayIndex[local]; ok {
-			daily[i].Tokens += tokens
+			daily[i].Tokens += r.amount.work()
 			daily[i].CostUSD += cost
 		}
 		if perSession[r.key.session] == nil {

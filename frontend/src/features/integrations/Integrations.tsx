@@ -10,6 +10,7 @@ import { ServerSettings, STATUS } from "@/features/mcp/ServerDetail";
 import { Failure, Loading, useRemote } from "@/features/mcp/shared";
 import { inDesktop } from "@/lib/backend";
 import { useUI } from "@/stores/ui";
+import { ApiKeyConnectorDialog } from "./ApiKeyConnectorDialog";
 import { BrandLogo } from "./BrandLogo";
 import { ClientConnectorDialog } from "./ClientConnectorDialog";
 import { CustomConnectorDialog } from "./CustomConnectorDialog";
@@ -53,6 +54,7 @@ export function Integrations() {
   const [query, setQuery] = useState("");
   const [custom, setCustom] = useState(false);
   const [clientFor, setClientFor] = useState<Connector | null>(null);
+  const [keyFor, setKeyFor] = useState<Connector | null>(null);
   const [waiting, setWaiting] = useState<ReadonlySet<string>>(new Set());
   const connect = useConnect(servers.reload);
   useEffect(() => { if (!inDesktop) return; void load(); return startSync(); }, [load, startSync]);
@@ -83,6 +85,7 @@ export function Integrations() {
   const add = (c: Connector) => {
     if (c.native === "github") { setOpen("github"); return; }
     if (c.client) { connect.clearError(); setClientFor(c); return; }
+    if (c.apiKey) { connect.clearError(); setKeyFor(c); return; }
     void connect.run(c.id, async () => {
       const { id, signingIn } = await connectServer(c.name, c.url!, { local: c.local });
       if (signingIn) setWaiting((current) => new Set(current).add(id));
@@ -143,7 +146,7 @@ export function Integrations() {
         <Button variant="outline" disabled={!inDesktop} onClick={() => { connect.clearError(); setCustom(true); }}><Plus />Custom connector</Button>
       </div>
       {desktopHint}
-      <Failure error={servers.error ?? (custom || clientFor ? null : connect.error)} retry={servers.error ? servers.reload : undefined} />
+      <Failure error={servers.error ?? (custom || clientFor || keyFor ? null : connect.error)} retry={servers.error ? servers.reload : undefined} />
       {servers.loading && !servers.data && <Loading>Loading connections…</Loading>}
       {connectedRows.length > 0 && <Section title="Connected">{connectedRows}</Section>}
       {featured.length > 0 && <Section title="Featured">{featured.map(addRow)}</Section>}
@@ -163,6 +166,11 @@ export function Integrations() {
           const { id, signingIn } = await connectServer(c.name, c.url!, { client });
           if (signingIn) setWaiting((current) => new Set(current).add(id));
           setClientFor(null);
+        })} />
+      <ApiKeyConnectorDialog connector={keyFor} busy={connect.busy === keyFor?.id} error={connect.error} onClose={() => setKeyFor(null)}
+        onAdd={(c, key) => void connect.run(c.id, async () => {
+          await connectServer(c.name, c.url!, { token: key, tokenHeader: c.apiKey!.header });
+          setKeyFor(null);
         })} />
     </div>
   );

@@ -12,7 +12,7 @@ import { bridge, resetBridge } from "./testing";
 import { ToolsPage, ToolsTab } from "./ToolsTab";
 
 const server = (id: string, over: Partial<ServerState> = {}): ServerState => ({
-  id, name: `Server ${id}`, url: `https://example.com/${id}`, transport: "http", adapter: "", enabled: true, authKind: "oauth", oauthClientId: "", scopes: "",
+  id, name: `Server ${id}`, url: `https://example.com/${id}`, transport: "http", adapter: "", enabled: true, authKind: "oauth", oauthClientId: "", scopes: "", tokenHeader: "",
   createdAt: 1, status: "connected", authorized: true, toolCount: 3, ...over,
 });
 const skill = (name: string, over: Partial<Skill> = {}): Skill => ({

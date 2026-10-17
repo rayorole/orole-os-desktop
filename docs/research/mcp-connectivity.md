@@ -38,7 +38,7 @@ Www-Authenticate: Bearer resource_metadata="https://drive.orole.be/.well-known/o
 {"jsonrpc":"2.0","error":{"code":-32000,"message":"missing authorization header"},"id":null}
 ```
 
-Important distinction: Drive's resource metadata advertises four scopes, but its unauthenticated challenge requests only `mcp:read`. The client defaults to the challenge scope, not all advertised scopes. Configured scope overrides are explicit.
+Important distinction: Drive's resource metadata advertises four scopes, but its unauthenticated challenge requests only `mcp:read`. The client defaults to the challenge scope, not all advertised scopes. Configured scope overrides are explicit. The challenge scope is requested whole, never shortened: Apollo's names 71 scopes (about 1.6 KB), and cutting it left a half-written last scope that Apollo rejected as unknown. Only tokens outside the RFC 6749 scope-token characters are dropped.
 
 ## Authorization server discovery
 
@@ -152,7 +152,7 @@ The authorization-start attempt stopped with the explicit missing-client-registr
 
 Settings exposes registry controls, OAuth client/CIMD configuration, tools/schema/annotation inspection, per-tool permissions, resources/prompts, and diagnostics. The global approval dialog subscribes before fetching the initial queue, handles expiration, and disables remembering destructive approvals. Mail provides folder/message lists, virtualization, pagination/search, plain-text threads, and capability-gated compose/reply with review. Drive provides list/grid, breadcrumbs, search/pagination and bounded text/Markdown/JSON/CSV or inline raster previews. Dashboard widgets show real data or setup/offline states, never fixture data.
 
-Typed desktop services: `MCP`, `Policy`, `Mail`, `Drive`. IPC groups: `mcp.servers.*`, `mcp.auth.*`, `mcp.connect`, `mcp.tools`, `mcp.catalog*`, `mcp.call`, `mcp.cancel`, `mcp.diagnostics`, `mcp.permissions.set`, `policy.pending/resolve/rules.*`, `mail.*`, `drive.*`. Static bearer tokens are accepted by `MCP.Add`/`MCP.Update` and stored only in Credential Manager.
+Typed desktop services: `MCP`, `Policy`, `Mail`, `Drive`. IPC groups: `mcp.servers.*`, `mcp.auth.*`, `mcp.connect`, `mcp.tools`, `mcp.catalog*`, `mcp.call`, `mcp.cancel`, `mcp.diagnostics`, `mcp.permissions.set`, `policy.pending/resolve/rules.*`, `mail.*`, `drive.*`. Static bearer tokens are accepted by `MCP.Add`/`MCP.Update` and stored only in Credential Manager. `AddParams.tokenHeader` sends the token in that header instead of `Authorization: Bearer` (Similarweb takes API keys only as `api-key: <key>`; as a bearer token it expects an OAuth JWT); the header is added only to requests for the server's own origin, so a redirect elsewhere never carries it.
 
 ### Scoped Drive handoff and discovered actions
 

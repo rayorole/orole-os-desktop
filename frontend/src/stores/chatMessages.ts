@@ -31,7 +31,10 @@ export interface SendInput { text: string; attachmentIds?: string[]; mode?: stri
 
 interface State {
   byBot: Record<string, Conversation>;
-  /** Run state from chat.run events (absent until the daemon has said something). */
+  /**
+   * Run state from chat.run events while this store is subscribed (absent otherwise: events that arrive while nobody
+   * listens, or while the daemon link is down, are lost, so the value is dropped rather than kept stale).
+   */
   runs: Record<string, boolean>;
   /** Bots whose queue is on hold (chat.run events): waiting messages start only after `resumeQueue`. */
   paused: Record<string, boolean>;
@@ -89,6 +92,8 @@ let subscribers = 0;
 let stop: (() => void) | undefined;
 /** Latest request token per bot, for both pages: a response only lands while its token is still current. */
 const latest = new Map<string, number>();
+/** Counts the chat.run events seen per bot; a run-state fetch that raced one of them is stale and dropped. */
+const runEvents = new Map<string, number>();
 const older = new Map<string, number>();
 /** Ids an event delivered since the bot's latest-page request started; the (older) response must not overwrite them. */
 const live = new Map<string, Map<string, Message>>();
@@ -164,6 +169,8 @@ export const useChatMessages = create<State>((set, get) => ({
   },
   async cancel(botId) {
     try { await Chat.cancel(botId); } catch (cause) { setProblem(botId, { message: `Could not stop the reply: ${describe(cause)}` }); }
+    // Stopping a run the daemon no longer has changes nothing and emits no event: ask it what is true so a wrong "running" ends here.
+    await reconcileRun(botId);
   },
   async pauseQueue(botId) {
     try { await Chat.pauseQueue(botId); } catch (cause) { setProblem(botId, { message: `Could not pause the queue: ${describe(cause)}` }); }
@@ -220,6 +227,7 @@ export const useChatMessages = create<State>((set, get) => ({
         set((state) => ({ byBot: { ...state.byBot, [delta.botId]: { ...current, messages } } }));
       });
       const offRun = events.chatRun.on(({ botId, running, paused }) => {
+        runEvents.set(botId, (runEvents.get(botId) ?? 0) + 1);
         set((state) => ({ runs: { ...state.runs, [botId]: running }, paused: { ...state.paused, [botId]: paused === true } }));
       });
       const offBot = events.chatBot.on(({ id, action }) => {
@@ -234,6 +242,8 @@ export const useChatMessages = create<State>((set, get) => ({
       });
       const offDaemon = useDaemon.subscribe((state, previous) => {
         if (state.link === "connected" && previous.link !== "connected") refresh();
+        // Events sent while the link is down never arrive: forget what they last said and let the daemon's list speak after reconnecting.
+        if (state.link === "offline" && previous.link !== "offline") set({ runs: {} });
       });
       const offFocus = onFocusRefresh(refresh);
       stop = () => { offMessage(); offDelta(); offRun(); offBot(); offDaemon(); offFocus(); };
@@ -242,7 +252,7 @@ export const useChatMessages = create<State>((set, get) => ({
     return () => {
       if (stopped) return;
       stopped = true;
-      if (--subscribers === 0) { stop?.(); stop = undefined; }
+      if (--subscribers === 0) { stop?.(); stop = undefined; set({ runs: {} }); }
     };
   },
 }));
@@ -276,10 +286,28 @@ async function deliver(botId: string, request: SendRequest): Promise<boolean> {
 /** The conversation window for a bot (an empty, unloaded one before `load`). */
 export const selectConversation = (botId: string) => (state: State): Conversation => state.byBot[botId] ?? EMPTY;
 
-/** Whether the bot is producing a reply: the daemon's run event, falling back to the rail's snapshot and any streaming message. */
+/** Asks the daemon whether the bot is running and corrects both run-state copies, unless a chat.run event arrived meanwhile. */
+async function reconcileRun(botId: string) {
+  if (!inDesktop || botId.startsWith(DRAFT_PREFIX)) return;
+  const seen = runEvents.get(botId) ?? 0;
+  try {
+    const { running } = await Chat.bot(botId);
+    if ((runEvents.get(botId) ?? 0) !== seen) return;
+    useChatMessages.setState((state) => ({ runs: { ...state.runs, [botId]: running } }));
+    useChat.setState((state) => ({ running: { ...state.running, [botId]: running } }));
+  } catch {
+    // The daemon cannot be asked (offline, bot archived): the link and bot events already cover those.
+  }
+}
+
+/**
+ * Whether the bot is producing a reply. The daemon's run event wins, then the rail's snapshot (kept in step with the
+ * daemon for the app's lifetime). A streaming message only decides before either has said anything: a stale
+ * "running" snapshot must never override the daemon reporting the bot idle.
+ */
 export function useBotRunning(botId: string): boolean {
   const own = useChatMessages((s) => s.runs[botId]);
   const rail = useChat((s) => s.running[botId]);
   const streaming = useChatMessages((s) => s.byBot[botId]?.messages.some((m) => m.status === "running") ?? false);
-  return own ?? (rail || streaming);
+  return own ?? rail ?? streaming;
 }

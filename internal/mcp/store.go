@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const serverCols = `id,name,url,transport,adapter,enabled,auth_kind,oauth_client_id,scopes,created_at`
+const serverCols = `id,name,url,transport,adapter,enabled,auth_kind,oauth_client_id,scopes,token_header,created_at`
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -16,7 +16,7 @@ func scanServer(r rowScanner) (ServerConfig, error) {
 	var s ServerConfig
 	var en int
 	var ak string
-	err := r.Scan(&s.ID, &s.Name, &s.URL, &s.Transport, &s.Adapter, &en, &ak, &s.OAuthClientID, &s.Scopes, &s.CreatedAt)
+	err := r.Scan(&s.ID, &s.Name, &s.URL, &s.Transport, &s.Adapter, &en, &ak, &s.OAuthClientID, &s.Scopes, &s.TokenHeader, &s.CreatedAt)
 	s.Enabled, s.AuthKind = en != 0, AuthKind(ak)
 	return s, err
 }
@@ -47,8 +47,8 @@ func (m *Manager) dbGetServer(ctx context.Context, id string) (ServerConfig, err
 }
 
 func (m *Manager) dbInsertServer(ctx context.Context, s ServerConfig) error {
-	_, err := m.db.ExecContext(ctx, `INSERT INTO mcp_servers(`+serverCols+`) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		s.ID, s.Name, s.URL, s.Transport, s.Adapter, boolInt(s.Enabled), string(s.AuthKind), s.OAuthClientID, s.Scopes, s.CreatedAt)
+	_, err := m.db.ExecContext(ctx, `INSERT INTO mcp_servers(`+serverCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		s.ID, s.Name, s.URL, s.Transport, s.Adapter, boolInt(s.Enabled), string(s.AuthKind), s.OAuthClientID, s.Scopes, s.TokenHeader, s.CreatedAt)
 	return err
 }
 

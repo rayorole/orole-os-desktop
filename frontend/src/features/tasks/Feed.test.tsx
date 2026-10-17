@@ -152,6 +152,26 @@ describe("Feed", () => {
     expect(meta).toHaveTextContent("8s");
   });
 
+  it("counts the run header's tokens without cache reads and breaks them down on hover", async () => {
+    const billed = { input: 3_285, cacheWrite: 61_300, cacheRead: 1_099_170, output: 36_200, reasoning: 0, total: 1_199_955, work: 100_785, costUsd: 0, unpriced: ["local/llama"] };
+    show([ev("prompt", "test", null, 0), ev("tool", "", { id: "t1", name: "shell", status: "ok", input: { command: "npm test" } }, 1), ev("message", "Done.", null, 2)],
+      session({ status: "done", tokens: 100_785, billed }));
+    const tokens = run().querySelector<HTMLElement>('[data-slot="run-meta"]')!;
+    expect(tokens).toHaveTextContent("100.8K tokens");
+    expect(tokens).not.toHaveTextContent("1.2M");
+    const trigger = within(tokens).getByText("100.8K tokens");
+    fireEvent.pointerEnter(trigger, { pointerType: "mouse" });
+    fireEvent.pointerMove(trigger, { pointerType: "mouse" });
+    fireEvent.mouseEnter(trigger);
+    fireEvent.mouseMove(trigger);
+    const breakdown = await screen.findByText((_, el) => el?.getAttribute("data-slot") === "token-breakdown", {}, { timeout: 3000 });
+    const rows = [...breakdown.querySelectorAll("dt")].map((dt) => `${dt.textContent} ${dt.nextElementSibling?.textContent}`);
+    // An unpriced model makes the cost a lower bound; a settled run has no estimate left.
+    expect(rows).toEqual(["Input 3,285", "Cache write 61,300", "Cache read 1,099,170", "Output 36,200", "Cost ≥ $0.00"]);
+    expect(breakdown).toHaveTextContent("No price for local/llama");
+    expect(breakdown).not.toHaveTextContent("estimated");
+  });
+
   it("shows the messages the agent writes while working live inside the run", () => {
     const working = session({ status: "working", activity: "Working…" });
     const events = [ev("prompt", "go"), ev("message", "Let me check the config first."), ev("tool", "", { id: "t1", name: "Read", status: "running", input: { file_path: "a.go" } })];

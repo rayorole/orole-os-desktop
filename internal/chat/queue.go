@@ -291,14 +291,16 @@ func (m *Manager) pump(botID string, st *runState) {
 			st.queue = nil
 			delete(m.runs, botID)
 			st.cancel, st.active = nil, ""
-			shown := st.shown
 			close(st.done)
+			// Published before m.mu is released: every later run of this bot starts under m.mu, so its chat.run
+			// running=true can never be published ahead of this running=false (clients would show the bot idle mid-run).
+			// Publish never blocks or calls back into the Manager.
+			if st.shown {
+				m.emit("chat.run", RunState{BotID: botID})
+			}
 			m.mu.Unlock()
 			for _, t := range left {
 				t.deliver(handoffResult{status: StatusCanceled, errText: "the daemon is shutting down"})
-			}
-			if shown {
-				m.emit("chat.run", RunState{BotID: botID})
 			}
 			if ran {
 				m.armIdle(botID)

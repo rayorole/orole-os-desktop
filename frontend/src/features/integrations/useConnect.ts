@@ -7,8 +7,10 @@ export interface ConnectOptions {
   local?: boolean;
   /** User-supplied OAuth client (Google). The secret goes to the credential store, never back to the UI. */
   client?: { id: string; secret: string; scopes: string };
-  /** Static bearer token: stored in the credential store, no browser sign-in. */
+  /** Static token: stored in the credential store, no browser sign-in. */
   token?: string;
+  /** Header that carries the token (an API key such as Similarweb's "api-key"); default Authorization: Bearer. */
+  tokenHeader?: string;
 }
 
 /**
@@ -21,11 +23,12 @@ export interface ConnectOptions {
  * Registration is kept when sign-in fails so the error stays inspectable on the details page.
  */
 export async function connectServer(name: string, url: string, options: ConnectOptions = {}): Promise<{ id: string; signingIn: boolean }> {
-  const { local, client, token } = options;
+  const { local, client, token, tokenHeader } = options;
   const added = await MCP.add({
     name, url, adapter: "", authKind: local ? "none" : token ? "bearer" : "oauth",
     oauthClientId: client?.id ?? "", scopes: client?.scopes ?? "",
     ...(client?.secret ? { clientSecret: client.secret } : {}), ...(token ? { bearerToken: token } : {}),
+    ...(token && tokenHeader ? { tokenHeader } : {}),
   });
   if (local || token) return { id: added.id, signingIn: false };
   let state = added;

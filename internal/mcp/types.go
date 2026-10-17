@@ -54,6 +54,7 @@ type ServerConfig struct {
 	AuthKind      AuthKind `json:"authKind"`
 	OAuthClientID string   `json:"oauthClientId"` // public id or https client-metadata URL; "" = dynamic registration
 	Scopes        string   `json:"scopes"`        // space separated override; "" = what the server asks for
+	TokenHeader   string   `json:"tokenHeader"`   // bearer kind: header carrying the token; "" = Authorization: Bearer
 	CreatedAt     int64    `json:"createdAt"`
 }
 
@@ -67,6 +68,7 @@ type AddParams struct {
 	OAuthClientID string   `json:"oauthClientId"`
 	Scopes        string   `json:"scopes"`
 	BearerToken   string   `json:"bearerToken,omitempty"`
+	TokenHeader   string   `json:"tokenHeader,omitempty"` // send BearerToken in this header instead of Authorization: Bearer
 	ClientSecret  string   `json:"clientSecret,omitempty"`
 }
 

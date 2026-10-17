@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -175,6 +178,29 @@ func TestDiscoverOpenServerAndUnreachable(t *testing.T) {
 	}
 	if _, err := Discover(context.Background(), nil2(), "http://example.com/mcp"); !errors.Is(err, ErrUnsafeURL) {
 		t.Fatalf("plain http to a public host must be refused: %v", err)
+	}
+}
+
+// Apollo's challenge asks for 71 scopes (about 1.6 KB). Every one must come back in the
+// authorization request intact: a cut last token is a scope the server does not know.
+func TestOAuthFlowRequestsEveryChallengeScope(t *testing.T) {
+	scopes := make([]string, 80)
+	for i := range scopes {
+		scopes[i] = fmt.Sprintf("emailer_campaigns_remove_or_stop_contact_ids_%02d", i)
+	}
+	h := newHarness(t)
+	srv := mcptest.New(t, mcptest.Options{DCR: true, Scopes: scopes})
+	st := h.add(t, srv, AddParams{})
+	h.authorize(t, srv, st.ID)
+	if got := srv.Authorizations[0].Scope; got != strings.Join(scopes, " ")+" offline_access" {
+		t.Fatalf("scope %q", got)
+	}
+}
+
+func TestScopeTokensDropsMalformedTokens(t *testing.T) {
+	got := scopeTokens("read  contacts:write\tbad\"quote bad\\slash caf\u00e9 \u200bzw ok")
+	if strings.Join(got, " ") != "read contacts:write ok" {
+		t.Fatalf("%q", got)
 	}
 }
 
@@ -479,6 +505,80 @@ func TestStaticBearer(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.wait(t, st.ID, StatusConnected)
+}
+
+// Similarweb takes API keys only in an api-key header; as a bearer token they are refused.
+func TestStaticKeyInCustomHeader(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	srv := mcptest.New(t, mcptest.Options{KeyHeader: "api-key"})
+	srv.AddStaticToken("sw-key")
+	st := h.add(t, srv, AddParams{AuthKind: AuthBearer, BearerToken: "sw-key", TokenHeader: "api-key"})
+	if st.TokenHeader != "api-key" {
+		t.Fatalf("token header %q", st.TokenHeader)
+	}
+	h.wait(t, st.ID, StatusConnected)
+
+	srv.InvalidateAccessTokens()
+	if _, err := h.m.CallTool(ctx, st.ID, "echo", map[string]any{"message": "x"}, CallOptions{}); !errors.Is(err, ErrReauthRequired) {
+		t.Fatalf("got %v", err)
+	}
+	if got := h.wait(t, st.ID, StatusAuthRequired); !strings.Contains(got.LastError, "api-key header") {
+		t.Fatalf("last error %q", got.LastError)
+	}
+	// Replacing the key keeps the header.
+	srv.AddStaticToken("sw-key-2")
+	newKey := "sw-key-2"
+	if s, err := h.m.Update(ctx, st.ID, UpdateParams{BearerToken: &newKey}); err != nil || s.TokenHeader != "api-key" {
+		t.Fatalf("%+v %v", s, err)
+	}
+	h.wait(t, st.ID, StatusConnected)
+
+	for _, p := range []AddParams{
+		{AuthKind: AuthBearer, BearerToken: "k", TokenHeader: "Authorization"},
+		{AuthKind: AuthBearer, BearerToken: "k", TokenHeader: "Mcp-Session-Id"},
+		{AuthKind: AuthBearer, BearerToken: "k", TokenHeader: "api key"},
+		{AuthKind: AuthOAuth, TokenHeader: "api-key"},
+	} {
+		p.Name, p.URL = "x", srv.MCPURL+"/other"
+		if _, err := h.m.Add(ctx, p); !errors.Is(err, ErrBadRequest) {
+			t.Fatalf("%+v: %v", p, err)
+		}
+	}
+}
+
+func TestTokenHeaderStaysOnTheServerOrigin(t *testing.T) {
+	seen := map[string]string{}
+	var mu sync.Mutex
+	record := func(name string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			seen[name] = r.Header.Get("api-key")
+			mu.Unlock()
+		}
+	}
+	other := httptest.NewServer(record("other"))
+	defer other.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		record("origin")(w, r)
+		http.Redirect(w, r, other.URL, http.StatusFound)
+	}))
+	defer origin.Close()
+
+	a := newAuthSession("s", credentials.NewMemory(), nil, nil)
+	if err := a.Set(&credBlob{Kind: "bearer", AccessToken: "secret-key"}); err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(origin.URL)
+	hc := &http.Client{Transport: &tokenHeaderTransport{base: http.DefaultTransport, scheme: u.Scheme, host: u.Host, header: "api-key", a: a}}
+	resp, err := hc.Get(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if seen["origin"] != "secret-key" || seen["other"] != "" {
+		t.Fatalf("%v", seen)
+	}
 }
 
 func TestLifecycleAddRemoveEnableAndBackoff(t *testing.T) {
