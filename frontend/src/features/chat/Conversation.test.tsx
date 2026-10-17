@@ -1,9 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot, BotChange, Message, RunState, SendRequest } from "@/mygo";
 
 const bridge = vi.hoisted(() => ({
-  messages: vi.fn(), send: vi.fn(), cancel: vi.fn(), regenerate: vi.fn(), clear: vi.fn(), exportBot: vi.fn(),
+  messages: vi.fn(), send: vi.fn(), cancel: vi.fn(), regenerate: vi.fn(), clear: vi.fn(), exportBot: vi.fn(), botInfo: vi.fn(),
   pauseQueue: vi.fn(), resumeQueue: vi.fn(), cancelQueued: vi.fn(),
   begin: vi.fn(), chunk: vi.fn(), commit: vi.fn(), discard: vi.fn(),
   run: null as ((s: RunState) => void) | null,
@@ -13,7 +14,7 @@ const bridge = vi.hoisted(() => ({
 vi.mock("@/lib/backend", () => ({ inDesktop: true }));
 vi.mock("@/mygo", () => ({
   Chat: {
-    messages: bridge.messages, send: bridge.send, cancel: bridge.cancel, regenerate: bridge.regenerate, clear: bridge.clear, exportBot: bridge.exportBot,
+    messages: bridge.messages, send: bridge.send, cancel: bridge.cancel, regenerate: bridge.regenerate, clear: bridge.clear, exportBot: bridge.exportBot, bot: bridge.botInfo,
     pauseQueue: bridge.pauseQueue, resumeQueue: bridge.resumeQueue, cancelQueued: bridge.cancelQueued,
     beginAttachment: bridge.begin, attachmentChunk: bridge.chunk, commitAttachment: bridge.commit, discardAttachment: bridge.discard,
   },
@@ -32,6 +33,18 @@ vi.mock("@/mygo", () => ({
     daemonState: { on: () => () => {} },
   },
 }));
+
+// The real control records audio; its own tests live in tasks/ComposerVoice.test.tsx. This one says "hello there" when Stop is pressed.
+vi.mock("@/features/tasks/ComposerVoice", () => {
+  return {
+    ComposerVoice: ({ onTranscript, onActiveChange }: { onTranscript: (text: string) => void; onActiveChange: (active: boolean) => void }) => {
+      const [recording, setRecording] = useState(false);
+      return recording
+        ? <button type="button" onClick={() => { setRecording(false); onTranscript("hello there"); onActiveChange(false); }}>Stop dictation</button>
+        : <button type="button" onClick={() => { setRecording(true); onActiveChange(true); }}>Dictate a message</button>;
+    },
+  };
+});
 
 import { BotActions } from "@/features/chat/BotHeader";
 import { Conversation } from "@/features/chat/Conversation";
@@ -222,7 +235,7 @@ describe("composer", () => {
     expect(useChatDrafts.getState().drafts.a?.text).toBe("");
   });
 
-  it("shows Dictate when empty, Send once there is text, and never sends whitespace", async () => {
+  it("keeps Dictate beside Send whatever the draft holds, and never sends whitespace", async () => {
     await open([msg(1), msg(2)]);
     expect(screen.getByRole("button", { name: "Dictate a message" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
@@ -232,7 +245,30 @@ describe("composer", () => {
     expect(screen.getByRole("button", { name: "Dictate a message" })).toBeInTheDocument();
     type("hi");
     expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "Dictate a message" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Dictate a message" })).toBeInTheDocument();
+  });
+
+  it("adds dictated text to what is already typed instead of replacing it, with Send held back while recording", async () => {
+    await open([msg(1), msg(2)]);
+    type("Hello");
+    fireEvent.click(screen.getByRole("button", { name: "Dictate a message" }));
+    expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Stop dictation" }));
+    await waitFor(() => expect(box()).toHaveValue("Hello hello there"));
+    expect(useChatDrafts.getState().drafts.a?.text).toBe("Hello hello there");
+    expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Dictate a message" })).toBeInTheDocument();
+  });
+
+  it("keeps a recording that is under way when a reply starts, and offers Queue once it ends", async () => {
+    await open([msg(1), msg(2)]);
+    type("Hello");
+    fireEvent.click(screen.getByRole("button", { name: "Dictate a message" }));
+    act(() => bridge.run!({ botId: "a", running: true }));
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Stop dictation" }));
+    await waitFor(() => expect(box()).toHaveValue("Hello hello there"));
+    expect(screen.getByRole("button", { name: "Queue message" })).toBeEnabled();
   });
 
   it("does not submit while an IME composition is active", async () => {
@@ -255,6 +291,31 @@ describe("composer", () => {
     expect(within(await screen.findByRole("region", { name: "Queued messages" })).getByText("question 3")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => expect(bridge.cancel).toHaveBeenCalledWith("a"));
+  });
+
+  it("does not show a reply that finished while the conversation was closed as still running", async () => {
+    const view = await open([msg(1), msg(2)]);
+    act(() => bridge.run!({ botId: "a", running: true }));
+    useChat.setState({ running: { a: true } });
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeInTheDocument();
+    view.unmount();
+    // The finish arrives while nothing listens to this conversation; only the always-synced rail hears it.
+    useChat.setState({ running: { a: false } });
+    await open([msg(1), msg(2)]);
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    type("next");
+    expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
+  });
+
+  it("recovers from a wrong running state when Stop finds the daemon idle", async () => {
+    await open([msg(1), msg(2)]);
+    act(() => bridge.run!({ botId: "a", running: true }));
+    bridge.botInfo.mockResolvedValue(bot({ running: false }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Stop" })).toBeNull());
+    expect(bridge.cancel).toHaveBeenCalledWith("a");
+    type("hello");
+    expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
   });
 
   it("shows text put in the draft from elsewhere in the message box", async () => {

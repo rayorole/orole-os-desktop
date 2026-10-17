@@ -160,6 +160,7 @@ export function ComposerVoice({ disabled, compact = false, quiet = false, onTran
   callbacks.current = { onTranscript, onActiveChange };
 
   // Late recorder or daemon results must never edit the next task's draft, and the microphone must never stay open.
+  // An unmount that ends a recording tells the parent it is over, or a parent that hides Send while recording would keep it hidden.
   useEffect(() => () => {
     const run = active.current;
     active.current = null;
@@ -167,6 +168,7 @@ export function ComposerVoice({ disabled, compact = false, quiet = false, onTran
       run.discarded = true;
       release(run);
       discard(run.id);
+      callbacks.current.onActiveChange(false);
     }
   }, []);
 
