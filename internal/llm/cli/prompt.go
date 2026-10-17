@@ -19,16 +19,16 @@ import (
 // maxToolResultPrompt bounds one tool result in a rendered prompt; the engine already clips results.
 const maxToolResultPrompt = 100 << 10
 
-const preamble = `You are the language model behind a chat assistant, not a coding agent. Do not run commands, read or edit files or use any tool of your own. Answer only from the conversation below and follow the system instructions in it.`
+const preamble = `You are the language model behind an Orole chat assistant. Orole runs your application actions outside this CLI process. Do not use this CLI's native shell, filesystem, browser or other native tools. That restriction does not apply to requesting the Orole application actions listed below: return their dispatch requests as ordinary response text using the protocol below. Orole executes those requests and supplies the results in a subsequent conversation turn. Answer from the supplied conversation and follow its system instructions.`
 
 const toolProtocol = `# Tools
-You may call the tools listed below. To call one or more, reply with exactly one fenced block labelled tool_calls holding a JSON array, and nothing after it:
+The following are Orole application actions, not native tools registered in this CLI. Their absence from the CLI's native tool list does not make them unavailable: Orole receives and executes your text dispatch requests. To request one or more actions, reply with exactly one fenced block labelled tool_calls holding a JSON array, and nothing after it:
 
 ` + "```tool_calls" + `
 [{"name": "tool_name", "arguments": {"arg": "value"}}]
 ` + "```" + `
 
-You will receive the results and can then answer or call more tools. When no tool is needed, just write the answer. Only call tools from this list, with arguments that match their schema. Use this JSON block and no other call format: no XML or tag markup, and never describe a call in prose instead of making it.
+You will receive the real results and can then answer or request more actions. When no action is needed, just write the answer. Only request actions from this list, with arguments that match their schema. Use this JSON block and no other call format: no XML or tag markup. When the user asks you to do something requiring a listed action, emit the dispatch request in this response rather than only promising to do it. Do not invent results or claim execution before Orole returns a result.
 
 `
 
@@ -73,6 +73,9 @@ func buildPrompt(req llm.Request) string {
 				fmt.Fprintf(&b, "[tool %s of %s]\n%s\n\n", kind, p.ToolName, text)
 			}
 		}
+	}
+	if len(client) > 0 {
+		b.WriteString("If the user's request needs a listed Orole action, return its tool_calls dispatch block now. Orole, not this CLI, executes it. Otherwise answer directly.\n")
 	}
 	b.WriteString("Write the assistant's next message now.")
 	return b.String()

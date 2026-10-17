@@ -49,6 +49,28 @@ fence); that markup is parsed as a second call format under the same rules, so i
 the user as raw text. Parameter values are raw text: a parameter the schema types as `string` is taken verbatim, any
 other is used as JSON when it parses.
 
+The prompt distinguishes native CLI tools from Orole application actions explicitly. The native-tool restriction
+must not prohibit text dispatch requests: the CLI does not register `computer_run` as a native tool, but Orole
+can execute its `tool_calls` request. A user request to start the bot computer must dispatch an action in the same
+reply, rather than merely promise to start it. Earlier conversation refusals do not remove the offered actions.
+
+An opt-in live regression check verifies this interpretation with the configured signed-in CLI and model. It requests
+`computer_run` after a prior promise or refusal, but never executes the returned action or boots a VM:
+
+```powershell
+$env:OROLE_LIVE_CODEX_DISPATCH = "1"
+$env:OROLE_LIVE_CODEX_PATH = "C:\path\to\codex.exe"
+$env:OROLE_LIVE_CODEX_MODEL = "your-model-id"
+go test ./internal/llm/cli -run TestLiveCodexRequestsApplicationComputer -v
+```
+
+Windows VM communication endpoints live in a short, profile-specific directory under the user's temp directory.
+The backend applies its protected user-and-SYSTEM DACL before creating the sockets and per-boot token there;
+VM disks and downloaded images remain in the profile. A local VM smoke test can reuse an installed runtime
+without downloading it: set `OROLE_SANDBOX_LOCAL_RUNTIME_ROOT` to the installed `sandbox` directory and run
+`go test ./internal/sandbox -run TestLocalInstalledRuntimeBoot -v`. It boots an isolated test VM, runs `pwd`,
+and shuts it down; it does not use the bot's disk.
+
 Limits: `codex exec` prints whole messages, so replies appear at once instead of streaming; every step of a tool loop is a
 new CLI start (a few seconds); images and PDFs are not forwarded (vision is off for these models).
 

@@ -513,15 +513,17 @@ func TestAnUnexpectedExitIsACrash(t *testing.T) {
 	}
 }
 
-func TestBootRefusesATooLongDataDir(t *testing.T) {
+func TestBootSupportsALongDataDirWithShortTempSockets(t *testing.T) {
 	f := &fakeQEMU{}
 	b, spec, _ := testBackend(t, f)
 	b.paths = Paths{Root: filepath.Join(b.paths.Root, strings.Repeat("x", 100))}
-	if _, err := b.Boot(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "too long") {
-		t.Fatalf("err = %v", err)
+	vm, err := b.Boot(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if f.proc != nil {
-		t.Fatal("QEMU started anyway")
+	defer func() { vm.Kill(); <-vm.Done() }()
+	if strings.HasPrefix(chardevPath(f.args, "guest"), b.paths.Root) {
+		t.Fatal("socket still uses the long data directory")
 	}
 }
 

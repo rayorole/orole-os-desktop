@@ -55,7 +55,7 @@ func TestSocketIsShortAndStablePerBot(t *testing.T) {
 	if a == p.Socket("7c9e6679-7425-40de-944b-e07fc1f90ae7") {
 		t.Fatal("two bots share a socket")
 	}
-	if filepath.Dir(a) != filepath.Join(p.Root, "run") || filepath.Ext(a) != ".sock" || len(filepath.Base(a)) != 16+len(".sock") {
+	if filepath.Dir(a) != socketRunDir(p.Root) || filepath.Ext(a) != ".sock" || len(filepath.Base(a)) != 16+len(".sock") {
 		t.Fatalf("socket %q", a)
 	}
 	if err := CheckSocketPath(a); err != nil {
@@ -64,9 +64,9 @@ func TestSocketIsShortAndStablePerBot(t *testing.T) {
 }
 
 func TestCheckSocketPathRejectsLongDataDirs(t *testing.T) {
-	long := Paths{Root: `C:\` + strings.Repeat("d", 100) + `\sandbox`}
-	err := CheckSocketPath(long.Socket("bot"))
-	if err == nil || !strings.Contains(err.Error(), "too long") || !strings.Contains(err.Error(), long.Root) {
+	long := `C:\` + strings.Repeat("d", 100) + `\sandbox\bot.sock`
+	err := CheckSocketPath(long)
+	if err == nil || !strings.Contains(err.Error(), "too long") || !strings.Contains(err.Error(), long) {
 		t.Fatalf("err = %v", err)
 	}
 }

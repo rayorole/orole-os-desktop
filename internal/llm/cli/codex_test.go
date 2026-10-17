@@ -77,7 +77,7 @@ func TestStreamRunsAStrictSandboxedTurnAndReturnsTheReply(t *testing.T) {
 	if last := r.args[len(r.args)-1]; last != "-" {
 		t.Errorf("the prompt must come on stdin, got %q", last)
 	}
-	if !strings.Contains(r.stdin, "Be brief.") || !strings.Contains(r.stdin, "[user]\nping?") || !strings.Contains(r.stdin, "not a coding agent") {
+	if !strings.Contains(r.stdin, "Be brief.") || !strings.Contains(r.stdin, "[user]\nping?") || !strings.Contains(r.stdin, "Do not use this CLI's native shell") {
 		t.Errorf("prompt: %q", r.stdin)
 	}
 	if r.dir == "" {

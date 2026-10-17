@@ -8,6 +8,10 @@ notes. See `docs/development/updates.md`.
 
 ## Unreleased
 
+### Fixed
+- Windows bot computers place transient socket channels in a short, profile-specific user temp directory with the same protected DACL, avoiding long profile paths and profile-directory socket connection failures.
+- CLI-backed bots distinguish Orole application actions from the CLI's own native tools, so asking to start a bot computer dispatches a computer action instead of only promising to start or denying access to the tool.
+
 ## 0.4.3-dev - 2026-10-17
 
 ### Changed

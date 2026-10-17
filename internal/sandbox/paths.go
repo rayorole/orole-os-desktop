@@ -23,7 +23,7 @@ const MaxSocketPath = 107
 // the bot id, not the id itself, so the full path stays under MaxSocketPath for ordinary data folders.
 func (p Paths) Socket(botID string) string {
 	sum := sha256.Sum256([]byte(botID))
-	return filepath.Join(p.Root, "run", hex.EncodeToString(sum[:8])+".sock")
+	return filepath.Join(socketRunDir(p.Root), hex.EncodeToString(sum[:8])+".sock")
 }
 
 // Token is the file that hands the per-boot guest token to QEMU (fw_cfg), next to the bot's socket. It exists
