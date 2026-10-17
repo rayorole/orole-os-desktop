@@ -68,9 +68,13 @@ type Manager struct {
 	flows    map[string]*authFlow
 	sessions map[string]*authSession
 
+	teardownTimeout time.Duration // bounds each step of the background cleanup after Remove
+	cleanup         sync.WaitGroup
+
 	gen        atomic.Uint64 // see Generation
 	statusMu   sync.Mutex
 	lastStatus map[string]ServerState // last published mcp.status per server
+	removed    map[string]struct{}    // ids removed this run (ids are never reused); see publishStatus
 
 	permMu    sync.RWMutex
 	perms     map[string]map[string]string // server id -> tool -> decision (see permissions)
@@ -90,11 +94,12 @@ func New(o Options) *Manager {
 		o.Version = "0.0.0"
 	}
 	m := &Manager{db: o.DB, creds: o.Creds, pub: o.Pub, policy: o.Policy, events: o.Events, log: o.Log, hc: hc,
-		version:     o.Version,
-		backoffBase: or(o.BackoffBase, time.Second), backoffMax: or(o.BackoffMax, time.Minute),
+		version:         o.Version,
+		teardownTimeout: 10 * time.Second,
+		backoffBase:     or(o.BackoffBase, time.Second), backoffMax: or(o.BackoffMax, time.Minute),
 		connectTimeout: or(o.ConnectTimeout, 30*time.Second), callTimeout: or(o.CallTimeout, 60*time.Second),
 		conns: map[string]*conn{}, flows: map[string]*authFlow{}, sessions: map[string]*authSession{},
-		lastStatus: map[string]ServerState{}, perms: map[string]map[string]string{}}
+		lastStatus: map[string]ServerState{}, removed: map[string]struct{}{}, perms: map[string]map[string]string{}}
 	return m
 }
 
@@ -145,6 +150,12 @@ func (m *Manager) Close() {
 	}
 	for _, c := range conns {
 		c.stop()
+	}
+	finished := make(chan struct{})
+	go func() { m.cleanup.Wait(); close(finished) }()
+	select { // background cleanup after Remove; bounded so a stuck credential store cannot hold shutdown
+	case <-finished:
+	case <-time.After(m.teardownTimeout):
 	}
 }
 
@@ -414,30 +425,79 @@ func (m *Manager) Update(ctx context.Context, id string, p UpdateParams) (Server
 	return st, nil
 }
 
-// Remove stops and deletes a server together with its credentials and cache.
+// Remove deletes a server. The registry row decides: once it is gone the server is disconnected for
+// every caller, so Remove returns right after deleting it, and a failed delete changes nothing.
+// Cancelling a pending sign-in, closing the session (an HTTP DELETE to the remote server) and deleting
+// stored credentials (OS credential store, possibly behind a token refresh) can each stall, so they run
+// in the background with a timeout per step; a step that fails is reported as mcp.cleanup.failed.
 func (m *Manager) Remove(ctx context.Context, id string) error {
-	if _, err := m.dbGetServer(ctx, id); err != nil {
+	cfg, err := m.dbGetServer(ctx, id)
+	if err != nil {
 		return err
-	}
-	m.CancelAuth(id)
-	m.mu.Lock()
-	c := m.conns[id]
-	delete(m.conns, id)
-	m.mu.Unlock()
-	if c != nil {
-		c.stop()
 	}
 	if _, err := m.db.ExecContext(ctx, `DELETE FROM mcp_servers WHERE id=?`, id); err != nil {
 		return err
 	}
-	m.invalidatePermissions(id)
-	err := m.authSession(id).Clear()
 	m.mu.Lock()
-	delete(m.sessions, id)
+	c := m.conns[id]
+	delete(m.conns, id)
 	m.mu.Unlock()
+	m.invalidatePermissions(id)
 	m.audit("mcp.server.remove", "mcp/"+id, "allowed", "")
 	m.publishRemoved(id)
-	return err
+	m.teardown(cfg, c)
+	return nil
+}
+
+// teardown finishes a Remove in the background: it ends the pending sign-in and the connection, then
+// deletes the stored credentials. It touches only state of the removed server, so a step that outlives
+// its timeout is left to finish on its own and is reported as unconfirmed.
+func (m *Manager) teardown(cfg ServerConfig, c *conn) {
+	m.cleanup.Add(1)
+	go func() {
+		defer m.cleanup.Done()
+		var failed []string
+		if ok, _ := m.within(func() error {
+			m.CancelAuth(cfg.ID)
+			if c != nil {
+				c.stop()
+			}
+			return nil
+		}); !ok {
+			failed = append(failed, "closing the connection timed out")
+		}
+		switch ok, err := m.within(m.authSession(cfg.ID).Clear); {
+		case !ok:
+			failed = append(failed, "removing the stored credentials timed out; they may still be in the credential store")
+		case err != nil:
+			failed = append(failed, "removing the stored credentials failed: "+err.Error())
+		}
+		m.mu.Lock()
+		delete(m.sessions, cfg.ID)
+		m.mu.Unlock()
+		if len(failed) == 0 {
+			return
+		}
+		detail := untrusted.Line(strings.Join(failed, "; "), 300)
+		m.log.Warn("mcp server removed, cleanup incomplete", "server", cfg.ID, "problems", detail)
+		m.audit("mcp.server.cleanup", "mcp/"+cfg.ID, "error", detail)
+		m.publish("mcp.cleanup.failed", CleanupFailed{ServerID: cfg.ID, Name: cfg.Name, Error: detail})
+	}()
+}
+
+// within runs fn and waits at most teardownTimeout for it (ok=false on timeout). fn keeps running after
+// a timeout.
+func (m *Manager) within(fn func() error) (ok bool, err error) {
+	done := make(chan error, 1)
+	go func() { done <- fn() }()
+	t := time.NewTimer(m.teardownTimeout)
+	defer t.Stop()
+	select {
+	case err := <-done:
+		return true, err
+	case <-t.C:
+		return false, nil
+	}
 }
 
 // SetEnabled turns a server on or off; disabling closes the connection.

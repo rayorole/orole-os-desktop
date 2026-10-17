@@ -4,7 +4,7 @@ import { PreviewCard, PreviewCardPopup, PreviewCardTrigger } from "@/components/
 import { MCP, type Discovery, type ServerState } from "@/mygo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { BrandLogo } from "@/features/integrations/BrandLogo";
 import type { Connector } from "@/features/integrations/directory";
 import { errorText, Failure, JsonData, Loading, useRemote } from "./shared";
+import { disconnectServer } from "./disconnect";
 
 export const STATUS: Record<ServerState["status"], { label: string; variant: "success" | "outline" | "warning" }> = {
   connected: { label: "Connected", variant: "success" },
@@ -175,13 +176,12 @@ export function ServerSettings({ server, connector, changed, onRemoved }: {
         </div>
       </details>
 
-      <Dialog open={remove} onOpenChange={(open) => { if (!busy) setRemove(open); }}>
+      <Dialog open={remove} onOpenChange={setRemove}>
         <DialogPopup>
           <DialogHeader><DialogTitle>Disconnect {server.name}?</DialogTitle><DialogDescription>This removes the connection and its stored credentials. It does not delete anything on the service itself.</DialogDescription></DialogHeader>
-          <DialogPanel><Failure error={error} /></DialogPanel>
           <DialogFooter>
-            <Button variant="outline" disabled={busy} onClick={() => setRemove(false)}>Keep connected</Button>
-            <Button variant="destructive" disabled={busy} onClick={() => void run(async () => { await MCP.remove(server.id); setRemove(false); onRemoved?.(); })}>Disconnect</Button>
+            <Button variant="outline" onClick={() => setRemove(false)}>Keep connected</Button>
+            <Button variant="destructive" onClick={() => { setRemove(false); onRemoved?.(); disconnectServer(server, changed); }}>Disconnect</Button>
           </DialogFooter>
         </DialogPopup>
       </Dialog>

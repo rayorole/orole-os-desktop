@@ -190,7 +190,7 @@ func (c *conn) run(ctx context.Context) {
 		sess, hc, err := c.dial(ctx)
 		if err == nil {
 			stopClose := context.AfterFunc(ctx, func() { _ = sess.Close() })
-			c.onConnected(sess)
+			c.onConnected(ctx, sess)
 			waitErr := sess.Wait()
 			stopClose()
 			hc.CloseIdleConnections()
@@ -327,9 +327,9 @@ func classifyConnectErr(err error) error {
 	return err
 }
 
-func (c *conn) onConnected(sess *sdk.ClientSession) {
+func (c *conn) onConnected(ctx context.Context, sess *sdk.ClientSession) {
 	start := time.Now()
-	pctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	if err := sess.Ping(pctx, nil); err == nil {
 		c.noteLatency(time.Since(start))
 	}
@@ -341,9 +341,13 @@ func (c *conn) onConnected(sess *sdk.ClientSession) {
 	c.lastErr = ""
 	c.nextRetry = time.Time{}
 	c.mu.Unlock()
-	discoveryCtx, cancelDiscovery := context.WithTimeout(context.Background(), c.m.connectTimeout)
+	discoveryCtx, cancelDiscovery := context.WithTimeout(ctx, c.m.connectTimeout)
 	defer cancelDiscovery()
-	if _, err := c.refreshCatalog(discoveryCtx); err != nil {
+	_, err := c.refreshCatalog(discoveryCtx)
+	if ctx.Err() != nil {
+		return // stopped or removed meanwhile: nothing to report
+	}
+	if err != nil {
 		c.noteError(errors.New("connected, but discovery failed: " + err.Error()))
 	}
 	c.setStatus(StatusConnected)
