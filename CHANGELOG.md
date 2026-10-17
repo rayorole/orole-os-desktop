@@ -8,8 +8,17 @@ notes. See `docs/development/updates.md`.
 
 ## Unreleased
 
+### Changed
+- Token counts no longer include cache reads, the conversation context a coding agent re-sends with every request. Those were over 90% of the total and made a task look about ten times bigger than the work it did (a Claude task showed 1.2M tokens for about 101K of new input and output). A task's meter in chat, the run header in a task, and Home's Tokens, By agent, Latest sessions and All time widgets now count input + cache writes + output. Hover a count to see input, cache writes, cache reads, output and cost. Spend is unchanged.
+
 ### Fixed
+- Signing in to Apollo no longer fails with "unknown scopes". Orole cut the list of permissions a server asks for at 512 characters, so for servers that ask for many (Apollo asks for 71) the last one was sent half-written. The whole list is now requested.
+- Code tasks in the sidebar no longer swap places while they run. Each project lists its tasks pinned first, then newest created first, and a task keeps its row through tool calls, messages and status changes.
+- A bot's message box no longer stays stuck on Stop and "Queue message" after the reply has finished, which blocked sending. The running state is now dropped when it can no longer be trusted (the chat was closed or the connection to the daemon dropped while the reply ended), and Stop checks with the daemon so a wrong state always clears. The daemon also announces the end of a reply before a new one can start, so the box can no longer show a bot as idle in the middle of a reply.
+- Starting a reply while you are dictating no longer leaves the Send button hidden afterwards.
+- The dictation button stays available when the message box already has text. Dictated text is added after what you wrote instead of replacing it.
 - Similarweb now connects with an API key instead of failing with "HTTP 403 client registration refused". Similarweb's sign-in server refuses every desktop app (any request that names a `127.0.0.1` or `localhost` return address), so browser sign-in cannot work there. Adding Similarweb asks for an API key from your Similarweb account (API-only, Business or Enterprise plan; an account admin creates it under Settings › Account › API), which is kept in Windows Credential Manager and sent in Similarweb's `api-key` header. Remove a Similarweb connection added earlier and add it again.
+- Resuming a Claude Code task no longer bills everything the task had used before again. A resumed Claude Code process reports the session's earlier usage as part of its first turn; that turn now counts only its own tokens. Usage recorded for earlier resumes stays as it was.
 
 ## 0.4.2-dev - 2026-10-17
 

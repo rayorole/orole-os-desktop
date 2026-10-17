@@ -5,6 +5,7 @@
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleMinusIcon, ShieldAlertIcon, XIcon } from "lucide-react";
 import { useId, useState, type ComponentProps, type ReactNode } from "react";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { surfaces } from "./surfaces";
 import { Elapsed } from "./working-status";
@@ -163,7 +164,7 @@ export function RunResult({ foldable, children, className, ...props }: Component
  * tokens on the right; it is also the disclosure of the tree below (`children`: `AgentNode`s). The caller owns `open`, so a
  * running run can stay open and a settled one fold to its header line. Only `status` is announced, never a clock tick.
  */
-export function AgentRunTree({ state, title, status, elapsed, tokens, open, onOpenChange, children, className, ...props }: Omit<ComponentProps<"section">, "title" | "children"> & {
+export function AgentRunTree({ state, title, status, elapsed, tokens, tokensDetail, open, onOpenChange, children, className, ...props }: Omit<ComponentProps<"section">, "title" | "children"> & {
   state: AgentState;
   title: ReactNode;
   /** What a screen reader hears when the run changes step or settles. */
@@ -171,6 +172,8 @@ export function AgentRunTree({ state, title, status, elapsed, tokens, open, onOp
   elapsed?: ReactNode;
   /** Tokens to show next to the time; omitted when unknown. */
   tokens?: number;
+  /** What the tokens are made of, shown on hover over them. */
+  tokensDetail?: ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
@@ -184,7 +187,10 @@ export function AgentRunTree({ state, title, status, elapsed, tokens, open, onOp
         {(elapsed || tokens !== undefined) && <span data-slot="run-meta" className="flex shrink-0 items-center gap-1 text-xs tabular-nums text-muted-foreground">
           {elapsed}
           {elapsed && tokens !== undefined && <span aria-hidden>·</span>}
-          {tokens !== undefined && <span>{TOKENS.format(tokens)} tokens</span>}
+          {tokens !== undefined && <Tooltip disabled={!tokensDetail}>
+            <TooltipTrigger render={<span data-slot="run-tokens" />}>{TOKENS.format(tokens)} tokens</TooltipTrigger>
+            {tokensDetail && <TooltipPopup>{tokensDetail}</TooltipPopup>}
+          </Tooltip>}
         </span>}
         <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 -rotate-90 text-muted-foreground transition-transform duration-150 group-data-[panel-open]/run:rotate-0 motion-reduce:transition-none" />
       </CollapsibleTrigger>

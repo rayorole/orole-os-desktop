@@ -65,6 +65,13 @@ A bot works one message at a time; messages sent meanwhile are stored `pending` 
 as `chat.run` with `paused: true`; it lives in the run state, so it ends with the queue (pausing an idle bot is a
 no-op) and does not survive a daemon restart. The UI lists waiting messages above the composer, not in the thread.
 
+The `chat.run` events are the only live signal of a run, and the Manager publishes `running=false` while still holding
+the run state, so a new run's `running=true` can never be published ahead of it. The frontend (`useBotRunning`) trusts
+the daemon's event, then the bot rail's snapshot, and a streaming message only before either has spoken. Event-fed
+values are dropped when nothing listens (the conversation is closed) or the daemon link drops, since events sent then
+never arrive; the rail is re-listed on reconnect. Stop asks the daemon (`chat.bots.get`) what is true afterwards, so a
+wrong "running" ends there: `chat.cancel` on an idle bot is a silent no-op that emits nothing.
+
 ### Voice
 Every bot's system prompt carries `chatStyle` (`internal/chat/prompt.go`) after the standing rules: talk like a
 colleague in a messaging app, short and direct, one idea per paragraph, structured data in `show_*` components and long

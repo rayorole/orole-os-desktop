@@ -74,7 +74,7 @@ nor published. Exactly one summable source per harness, so nothing is counted tw
 
 | Harness | Billed source | Notes |
 |---|---|---|
-| Claude Code, structured | growth of `result.modelUsage` per model since the previous result | `modelUsage` and `total_cost_usd` are cumulative for the Claude Code process (they restart with each process, including `--resume`); per-model `costUSD` growth is the reported cost. Falls back to the per-turn `result.usage` when `modelUsage` has no token counts. Assistant-message usage is a context reading and never summed. `output_tokens_details.thinking_tokens` is the reasoning share |
+| Claude Code, structured | growth of `result.modelUsage` per model since the previous result | `modelUsage` and `total_cost_usd` are cumulative for the Claude Code process; per-model `costUSD` growth is the reported cost. A `--resume`d process restores the session's cumulative `modelUsage` (seen with Claude Code 2.1.289), so its first result bills the per-turn `result.usage` (no reported cost: priced from the catalogue) and only sets the `modelUsage` baseline. Also falls back to `result.usage` when `modelUsage` has no token counts. Assistant-message usage is a context reading and never summed. `output_tokens_details.thinking_tokens` is the reasoning share |
 | Codex | `thread/tokenUsage/updated` `last` (one model request) | billed once per change of the thread's cumulative `total`, since Codex repeats the notification unchanged on rate-limit updates; the first report of a process outside a turn only sets the baseline (a resumed thread restating its history). `cachedInputTokens` is a subset of `inputTokens` and is split out as cache reads; `reasoningOutputTokens` is the reasoning share. No reported cost |
 | Oh My Pi | `message_end` usage of each assistant message | pi-ai reports uncached `input`, `output`, `cacheRead`, `cacheWrite`, `reasoningTokens` and `cost.total` with the message's `provider`/`model`. A cost of 0 means pi-ai could not price the model and is treated as no report. `get_state` context usage is occupancy only |
 
@@ -83,13 +83,18 @@ once, by tool id within the turn; a result whose call never arrived counts the c
 `PreToolUse` hooks count too) and `failedTools` the results with status `error`; both travel in
 `agents.delta`.
 
-`Session.tokens` is the session's running total (input, output, cache reads and writes) and travels in
-`agents.delta`. Each `EvTokens` adds to it. Claude Code bills a turn only when it ends, so while a turn
-runs its decoder also emits `EvTokenEstimate` (`agents.TokenEstimate`: request id and that request's
-input + cache + output so far, from assistant-message usage, subagents included): the largest reading per
-request is added to `Session.tokens`, and the turn's billing replaces the estimates. Estimates never
-reach the ledger. On start, `Recover` fills `tokens` for sessions saved before the field existed from
-their `agent_usage` rows.
+`Session.tokens` is the session's headline count, input + cache writes + output (`TokenTotals.work`), and
+travels in `agents.delta`. Cache reads are left out of every headline: they are the context re-sent on each
+request, often over 90% of the total, and would make the count look far larger than the work done.
+`Session.billed` (`TokenTotals`, also in `agents.delta`) holds the billed breakdown (input, cache writes,
+cache reads, output, reasoning, cost, unpriced models), which the meters show on hover. Each `EvTokens`
+adds to both; `recordTokens` prices it like `agents.usage` does (reported cost, else catalogue price) and
+replaces `billed` rather than updating it in place. Claude Code bills a turn only when it ends, so while a
+turn runs its decoder also emits `EvTokenEstimate` (`agents.TokenEstimate`: request id and that request's
+input + cache write + output so far, from assistant-message usage, subagents included): the largest
+reading per request is added to `Session.tokens`, never to `billed`, and the turn's billing replaces the
+estimates. Estimates never reach the ledger. On start, `Recover` fills `billed` and `tokens` from their
+`agent_usage` rows for sessions saved before `billed` existed (whose `tokens` still counted cache reads).
 
 `agents.usage` (`Agents.usage(query)`) answers 24-hour and 7-day windows from the quarter-hour buckets (a
 bucket counts when it starts inside the window's first quarter hour or later), all time, per agent kind for
@@ -99,6 +104,8 @@ recently updated sessions. Sessions are counted by `started_at`. Cost is compute
 price refresh reprices history: a bucket whose every report carried the harness's cost uses that cost,
 otherwise the `internal/pricing` catalogue price; models it cannot price are listed in `unpriced`
 (`provider/model`, or `kind/model` without a provider) and add nothing, so the total is a lower bound.
+Each `TokenTotals` carries `total` (cache reads included) and `work` (cache reads excluded); the daily
+series, the per-agent order and every widget headline use `work`, and the widgets show the breakdown on hover.
 
 `internal/pricing` holds a trimmed models.dev snapshot (`snapshot.json`, regenerated with
 `go generate ./internal/pricing`) of list prices per million tokens. The daemon loads its cached download

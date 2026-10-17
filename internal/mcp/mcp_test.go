@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -177,6 +178,29 @@ func TestDiscoverOpenServerAndUnreachable(t *testing.T) {
 	}
 	if _, err := Discover(context.Background(), nil2(), "http://example.com/mcp"); !errors.Is(err, ErrUnsafeURL) {
 		t.Fatalf("plain http to a public host must be refused: %v", err)
+	}
+}
+
+// Apollo's challenge asks for 71 scopes (about 1.6 KB). Every one must come back in the
+// authorization request intact: a cut last token is a scope the server does not know.
+func TestOAuthFlowRequestsEveryChallengeScope(t *testing.T) {
+	scopes := make([]string, 80)
+	for i := range scopes {
+		scopes[i] = fmt.Sprintf("emailer_campaigns_remove_or_stop_contact_ids_%02d", i)
+	}
+	h := newHarness(t)
+	srv := mcptest.New(t, mcptest.Options{DCR: true, Scopes: scopes})
+	st := h.add(t, srv, AddParams{})
+	h.authorize(t, srv, st.ID)
+	if got := srv.Authorizations[0].Scope; got != strings.Join(scopes, " ")+" offline_access" {
+		t.Fatalf("scope %q", got)
+	}
+}
+
+func TestScopeTokensDropsMalformedTokens(t *testing.T) {
+	got := scopeTokens("read  contacts:write\tbad\"quote bad\\slash caf\u00e9 \u200bzw ok")
+	if strings.Join(got, " ") != "read contacts:write ok" {
+		t.Fatalf("%q", got)
 	}
 }
 

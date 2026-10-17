@@ -1,7 +1,7 @@
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { Event as AgentEvent, Session } from "@/mygo";
+import type { Event as AgentEvent, Session, TokenTotals } from "@/mygo";
 import { Button } from "@/components/ui/button";
 import { AgentNode, AgentRunTree } from "@/components/assistant-ui/elements/agent-run-tree";
 import { AgentTodos } from "@/components/assistant-ui/elements/agent-todos";
@@ -11,6 +11,7 @@ import { ConversationMap } from "@/components/assistant-ui/elements/conversation
 import { mapTurns } from "@/lib/conversationMap";
 import { ErrorNote } from "@/features/agents/shared";
 import { kindLabel } from "@/features/agents/format";
+import { TokenBreakdown } from "@/features/agents/TokenBreakdown";
 import { liveActivity, reasoningTitle, type FeedItem, type LiveActivity, type TurnEntry, type TurnRun } from "@/lib/taskEvents";
 import { AnswerCard, AssistantMessage, ErrorRow, FileCard, GuardrailNotice, ImageCard, ImageGenerationCard, NoteRow, PermissionItem, SourcesCard, TurnFailure, UserMessage } from "./FeedItems";
 import { QuestionCard } from "./TaskInteractions";
@@ -72,8 +73,10 @@ interface RowProps {
   open: boolean;
   /** Run rows: what the agent is doing, for the running one only. */
   activity: LiveActivity | null;
-  /** The last run: the session's token count so far. */
+  /** The last run: the session's token count so far, cache reads excluded. */
   tokens?: number;
+  /** The last run: the session's billed tokens by kind, for the hover breakdown. */
+  billed?: TokenTotals;
   onOpenChange: (key: string, open: boolean) => void;
 }
 
@@ -82,7 +85,7 @@ interface RowProps {
  * and, on the last run, the session's tokens; the main agent's node holds every step in order (with the plan and its work), and
  * subagents hang under the call that started them. Pending approvals, questions and errors, then the answer card, stay below.
  */
-function RunView({ run, session, search, open, activity, tokens, onOpenChange }: Omit<RowProps, "entry" | "separator"> & { run: TurnRun }) {
+function RunView({ run, session, search, open, activity, tokens, billed, onOpenChange }: Omit<RowProps, "entry" | "separator"> & { run: TurnRun }) {
   const running = run.status === "running";
   const { steps, spawned } = nestSubagents(run.steps);
   // Stable per search state, so memoized steps of a live run skip rendering.
@@ -112,6 +115,7 @@ function RunView({ run, session, search, open, activity, tokens, onOpenChange }:
   return <div data-scroll-anchor={run.key} className="flex min-w-0 flex-col gap-3">
     <AgentRunTree data-testid={running ? "live-activity" : undefined} state={RUN_STATE[run.status]} title={running ? now : settled} status={running ? now : settled}
       elapsed={running && run.startedAt !== null ? <Elapsed start={run.startedAt} live /> : undefined} tokens={tokens}
+      tokensDetail={tokens !== undefined && billed ? <TokenBreakdown totals={billed} pending={tokens - billed.work} /> : undefined}
       open={open} onOpenChange={(next) => onOpenChange(run.key, next)}>
       <AgentNode name={session.kind ? kindLabel(session.kind) : "Agent"} state={RUN_STATE[run.status]} summary={summary} start={run.startedAt} end={end} collapsible={false}>
         {beforePlan.length > 0 && <RunSteps items={beforePlan} ctx={ctx} />}
@@ -128,15 +132,15 @@ function RunView({ run, session, search, open, activity, tokens, onOpenChange }:
  * `useTurnEntries` keeps the identity of an entry no update touched, so a row renders again only when its own entry, disclosure, search state or (for permission and question rows) session changed,
  * not on every event of the conversation.
  */
-const FeedRow = memo(function FeedRow({ entry, separator, session, search, open, activity, tokens, onOpenChange }: RowProps) {
+const FeedRow = memo(function FeedRow({ entry, separator, session, search, open, activity, tokens, billed, onOpenChange }: RowProps) {
   return <>
     {separator && <DaySeparator at={entry.at} />}
     {entry.type === "run"
-      ? <RunView run={entry} session={session} search={search} open={open} activity={activity} tokens={tokens} onOpenChange={onOpenChange} />
+      ? <RunView run={entry} session={session} search={search} open={open} activity={activity} tokens={tokens} billed={billed} onOpenChange={onOpenChange} />
       : anchored(entry.item.key, <FeedEntry item={entry.item} session={session} />, search)}
   </>;
-}, (a, b) => a.separator === b.separator && a.search === b.search && a.open === b.open && a.activity?.label === b.activity?.label && a.tokens === b.tokens && a.onOpenChange === b.onOpenChange
-  && a.session.id === b.session.id && (a.session === b.session || !needsSession(b.entry)) && a.entry === b.entry);
+}, (a, b) => a.separator === b.separator && a.search === b.search && a.open === b.open && a.activity?.label === b.activity?.label && a.tokens === b.tokens && a.billed === b.billed
+  && a.onOpenChange === b.onOpenChange && a.session.id === b.session.id && (a.session === b.session || !needsSession(b.entry)) && a.entry === b.entry);
 
 export interface FeedProps {
   session: Session;
@@ -296,9 +300,10 @@ function ConversationFeed({ session, events, loading, loadingMore, error, hasMor
   const liveRun = lastRun?.type === "run" && lastRun.status === "running";
   const row = (index: number) => {
     const entry = entries[index]!;
+    const last = entry.type === "run" && index === entries.length - 1;
     return <FeedRow entry={entry} separator={days[index] !== (index ? days[index - 1] : null)} session={session} search={search}
       open={runOpen(entry)} activity={entry.type === "run" && entry.status === "running" ? activity : null}
-      tokens={entry.type === "run" && index === entries.length - 1 ? session.tokens : undefined} onOpenChange={toggleRun} />;
+      tokens={last ? session.tokens : undefined} billed={last ? session.billed : undefined} onOpenChange={toggleRun} />;
   };
 
   // The aside lies over the viewport's right side, left of its scrollbar (8px, index.css), so the conversation's scrollbar runs at

@@ -190,7 +190,7 @@ func (m *Manager) Recover() (lost int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	billed, err := m.st.sessionTokens()
+	billed, err := m.ledgerTotals()
 	if err != nil {
 		return 0, err
 	}
@@ -199,9 +199,11 @@ func (m *Manager) Recover() (lost int, err error) {
 		// may have a persisted sending entry from the previous daemon.
 		s.Pending, s.Questions = nil, nil
 		pauseQueue(&s, "The daemon restarted. Resume this queue explicitly.")
-		backfill := s.Tokens == 0 && billed[s.ID] > 0
+		// Sessions saved before Billed existed counted cache reads in Tokens.
+		t, backfill := billed[s.ID]
+		backfill = backfill && s.Billed == nil
 		if backfill {
-			s.Tokens = billed[s.ID]
+			s.Billed, s.Tokens = &t, t.Work
 		}
 		if len(s.Queue) > 0 || backfill {
 			if err := m.st.SaveSession(s, ""); err != nil {

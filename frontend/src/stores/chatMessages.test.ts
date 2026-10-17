@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BotChange, Message, MessageDelta, MessagesRequest, RunState, SendRequest } from "@/mygo";
 
 const bridge = vi.hoisted(() => ({
-  messages: vi.fn(), send: vi.fn(), cancel: vi.fn(), regenerate: vi.fn(), clear: vi.fn(),
+  messages: vi.fn(), send: vi.fn(), cancel: vi.fn(), regenerate: vi.fn(), clear: vi.fn(), botInfo: vi.fn(),
   run: null as ((s: RunState) => void) | null,
   message: null as ((m: Message) => void) | null,
   delta: null as ((d: MessageDelta) => void) | null,
@@ -12,7 +12,7 @@ const bridge = vi.hoisted(() => ({
 
 vi.mock("@/lib/backend", () => ({ inDesktop: true }));
 vi.mock("@/mygo", () => ({
-  Chat: { messages: bridge.messages, send: bridge.send, cancel: bridge.cancel, regenerate: bridge.regenerate, clear: bridge.clear },
+  Chat: { messages: bridge.messages, send: bridge.send, cancel: bridge.cancel, regenerate: bridge.regenerate, clear: bridge.clear, bot: bridge.botInfo },
   Daemon: { health: vi.fn() },
   events: {
     chatRun: { on: (f: (s: RunState) => void) => { bridge.run = f; return () => { bridge.run = null; }; } },
@@ -41,7 +41,7 @@ const deferred = <T,>() => {
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 
 let stop: (() => void) | undefined;
-const reset = () => { useChatMessages.setState({ byBot: {}, runs: {}, problems: {} }); useChatDrafts.setState({ drafts: {} }); };
+const reset = () => { useChatMessages.setState({ byBot: {}, runs: {}, problems: {} }); useChat.setState({ running: {} }); useChatDrafts.setState({ drafts: {} }); };
 
 beforeEach(() => {
   Object.values(bridge).forEach((v) => { if (typeof v === "function" && "mockReset" in v) v.mockReset(); });
@@ -291,6 +291,34 @@ describe("sending, cancelling, regenerating", () => {
     expect(useChatMessages.getState().problems.a!.message).toBe("Could not regenerate the reply: not the last");
   });
 
+  it("asks the daemon after Stop, so a run it no longer has stops showing as running", async () => {
+    bridge.run!({ botId: "a", running: true });
+    useChat.setState({ running: { a: true } });
+    bridge.botInfo.mockResolvedValue({ id: "a", running: false });
+    await useChatMessages.getState().cancel("a");
+    expect(bridge.botInfo).toHaveBeenCalledWith("a");
+    expect(useChatMessages.getState().runs.a).toBe(false);
+    expect(useChat.getState().running.a).toBe(false);
+  });
+
+  it("keeps a run event that arrives while the daemon is being asked after Stop", async () => {
+    const answer = deferred<{ id: string; running: boolean }>();
+    bridge.botInfo.mockReturnValue(answer.promise);
+    const stopping = useChatMessages.getState().cancel("a");
+    await settle();
+    bridge.run!({ botId: "a", running: true });
+    answer.resolve({ id: "a", running: false });
+    await stopping;
+    expect(useChatMessages.getState().runs.a).toBe(true);
+  });
+
+  it("survives the daemon not answering after Stop", async () => {
+    bridge.run!({ botId: "a", running: true });
+    bridge.botInfo.mockRejectedValue(new Error("daemon unavailable"));
+    await expect(useChatMessages.getState().cancel("a")).resolves.toBeUndefined();
+    expect(useChatMessages.getState().runs.a).toBe(true);
+  });
+
   it("clears the window after the daemon clears the conversation", async () => {
     bridge.clear.mockResolvedValue(undefined);
     expect(await useChatMessages.getState().clear("a")).toBe(true);
@@ -306,6 +334,31 @@ describe("upsert", () => {
   });
 });
 
+describe("stale run state", () => {
+  it("forgets run events once nothing listens, so a run that ends meanwhile is not shown as running when the chat returns", () => {
+    bridge.run!({ botId: "a", running: true });
+    useChat.setState({ running: { a: true } });
+    const { result } = renderHook(() => useBotRunning("a"));
+    expect(result.current).toBe(true);
+    stop!();
+    stop = undefined;
+    // The finish arrives while the conversation is not mounted: only the always-synced rail hears it.
+    useChat.setState({ running: { a: false } });
+    expect(useChatMessages.getState().runs).toEqual({});
+    stop = useChatMessages.getState().startSync();
+    expect(renderHook(() => useBotRunning("a")).result.current).toBe(false);
+  });
+
+  it("forgets run events when the daemon link drops, and keeps listening after it returns", () => {
+    bridge.run!({ botId: "a", running: true });
+    useDaemon.setState({ link: "offline" });
+    expect(useChatMessages.getState().runs).toEqual({});
+    useDaemon.setState({ link: "connected" });
+    bridge.run!({ botId: "a", running: true });
+    expect(useChatMessages.getState().runs.a).toBe(true);
+  });
+});
+
 describe("useBotRunning", () => {
   it("prefers the daemon's run event, then the rail snapshot, then a streaming message", () => {
     useChat.setState({ running: { a: true } });
@@ -318,5 +371,11 @@ describe("useBotRunning", () => {
     useChat.setState({ running: {} });
     rerender();
     expect(result.current).toBe(true);
+  });
+
+  it("does not let a stale streaming message override the daemon reporting the bot idle", () => {
+    useChatMessages.setState({ runs: {}, byBot: { a: { messages: [msg(2, { status: "running" })], hasMore: false, loaded: true, loading: false, loadingOlder: false, error: null, browsing: false } } });
+    useChat.setState({ running: { a: false } });
+    expect(renderHook(() => useBotRunning("a")).result.current).toBe(false);
   });
 });

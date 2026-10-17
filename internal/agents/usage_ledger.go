@@ -2,8 +2,11 @@ package agents
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/rayorole/orole-os-desktop/internal/pricing"
 )
 
 // EvTokens is a billed-token report from a harness; Data = TokenUsage. The manager folds it into
@@ -12,8 +15,9 @@ import (
 // Exactly one summable source per harness emits it, so nothing is counted twice:
 //   - Claude Code: the per-model deltas of result.modelUsage, which Claude Code keeps cumulative
 //     per process (falling back to result.usage, the per-turn total, when modelUsage carries no
-//     token counts). Assistant-message usage is a context reading and is never billed; it only
-//     feeds the live EvTokenEstimate.
+//     token counts). A resumed process restores the session's cumulative modelUsage, so its first
+//     result bills result.usage and only sets the baseline. Assistant-message usage is a context
+//     reading and is never billed; it only feeds the live EvTokenEstimate.
 //   - Codex: thread/tokenUsage/updated "last" (one model request), once per change of the
 //     thread's cumulative total, since Codex repeats the notification with unchanged totals.
 //   - Oh My Pi: message_end usage of each assistant message. get_state usage is occupancy only.
@@ -27,8 +31,8 @@ const EvTokens = "tokens"
 // Like EvTokens it is neither recorded nor published as an event.
 const EvTokenEstimate = "token_estimate"
 
-// TokenEstimate is Event.Data for EvTokenEstimate: request ID's tokens so far. Repeated
-// readings of one request are not added up; the largest counts.
+// TokenEstimate is Event.Data for EvTokenEstimate: request ID's tokens so far, cache reads
+// excluded like Session.Tokens. Repeated readings of one request are not added up; the largest counts.
 type TokenEstimate struct {
 	ID     string `json:"id"`
 	Tokens int64  `json:"tokens"`
@@ -92,6 +96,8 @@ type usageAmount struct {
 	hasReportedCost                                 bool // every increment carried a reported cost
 }
 
+func (a usageAmount) work() int64 { return a.input + a.cacheWrite + a.output }
+
 func (a *usageAmount) add(b usageAmount) {
 	a.input += b.input
 	a.output += b.output
@@ -128,7 +134,8 @@ func ledgerModel(kind, model string) string {
 	return model
 }
 
-// recordTokens folds an EvTokens event into the ledger. The caller holds ls.controlMu.
+// recordTokens folds an EvTokens event into the ledger and the session's Billed breakdown. The
+// caller holds ls.controlMu.
 func (m *Manager) recordTokens(ls *liveSess, e Event) {
 	var u TokenUsage
 	if json.Unmarshal(e.Data, &u) != nil {
@@ -154,10 +161,24 @@ func (m *Manager) recordTokens(ls *liveSess, e Event) {
 		amount.reportedCost = *u.CostUSD
 	}
 	m.st.QueueUsage(usageKey{session: ls.id, provider: provider, model: u.Model, start: at.UTC().Truncate(usageBucket).Unix()}, amount)
+	cost, unpriced := (&usagePricer{cat: m.cfg.Prices}).cost(amount, kind, provider, u.Model)
 	// Billing settles the turn's estimates: the billed count replaces them.
-	billed, estimated := u.total(), ls.estimated
+	estimated := ls.estimated
 	ls.estimates, ls.estimated = nil, 0
-	m.mutateHot(ls.id, func(s *Session) { s.Tokens = max(s.Tokens+billed-estimated, 0) })
+	m.mutateHot(ls.id, func(s *Session) {
+		// A new value, never an update in place: copies of the session share the old one.
+		b := TokenTotals{Unpriced: []string{}}
+		if s.Billed != nil {
+			b = *s.Billed
+		}
+		b.add(amount, cost)
+		if unpriced != "" && !slices.Contains(b.Unpriced, unpriced) {
+			b.Unpriced = append(slices.Clone(b.Unpriced), unpriced)
+			slices.Sort(b.Unpriced)
+		}
+		s.Billed = &b
+		s.Tokens = max(s.Tokens+amount.work()-estimated, 0)
+	})
 }
 
 // estimateTokens folds an EvTokenEstimate into Session.Tokens. The caller holds ls.controlMu.
@@ -237,24 +258,27 @@ func (st *Store) usageRows() ([]usageRow, error) {
 	return out, rows.Err()
 }
 
-// sessionTokens returns each session's billed tokens from the ledger, for sessions saved before
-// Session.Tokens existed.
-func (st *Store) sessionTokens() (map[string]int64, error) {
-	rows, err := st.db.Query(`SELECT session_id, SUM(input + output + cache_read + cache_write) FROM agent_usage GROUP BY session_id`)
+// ledgerTotals returns each session's billed tokens and cost from the ledger, for sessions saved
+// before Session.Billed existed.
+func (m *Manager) ledgerTotals() (map[string]TokenTotals, error) {
+	rows, err := m.st.usageRows()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := map[string]int64{}
-	for rows.Next() {
-		var id string
-		var n int64
-		if err := rows.Scan(&id, &n); err != nil {
-			return nil, err
+	pricer := &usagePricer{cat: m.cfg.Prices, cache: map[[2]string]*pricing.Price{}}
+	acc := map[string]*usageAcc{}
+	for _, r := range rows {
+		cost, unpriced := pricer.cost(r.amount, r.kind, r.key.provider, r.key.model)
+		if acc[r.key.session] == nil {
+			acc[r.key.session] = &usageAcc{}
 		}
-		out[id] = n
+		acc[r.key.session].add(r, cost, unpriced)
 	}
-	return out, rows.Err()
+	out := make(map[string]TokenTotals, len(acc))
+	for id, a := range acc {
+		out[id] = a.totals()
+	}
+	return out, nil
 }
 
 // sessionStart is a session's kind and start time, for session counts.
