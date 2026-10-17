@@ -8,6 +8,11 @@ notes. See `docs/development/updates.md`.
 
 ## Unreleased
 
+### Fixed
+- A bot's message box no longer stays stuck on Stop and "Queue message" after the reply has finished, which blocked sending. The running state is now dropped when it can no longer be trusted (the chat was closed or the connection to the daemon dropped while the reply ended), and Stop checks with the daemon so a wrong state always clears. The daemon also announces the end of a reply before a new one can start, so the box can no longer show a bot as idle in the middle of a reply.
+- Starting a reply while you are dictating no longer leaves the Send button hidden afterwards.
+- The dictation button stays available when the message box already has text. Dictated text is added after what you wrote instead of replacing it.
+
 ## 0.4.2-dev - 2026-10-17
 
 ### Fixed

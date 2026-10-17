@@ -342,14 +342,18 @@ describe("cancel and teardown", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Nothing was added to your draft.");
   });
 
-  it("releases the microphone when it unmounts while recording", async () => {
-    const view = render(<Harness />);
+  it("releases the microphone and reports the recording as over when it unmounts while recording", async () => {
+    const active = vi.fn();
+    const view = render(<Harness onActive={active} />);
     const recorder = await startRecording();
+    expect(active).toHaveBeenLastCalledWith(true);
     track.stop.mockClear();
     view.unmount();
     expect(track.stop).toHaveBeenCalled();
     expect(recorder.stop).toHaveBeenCalledOnce();
     expect(api.upload).not.toHaveBeenCalled();
+    // A parent that outlives it (and hides Send while recording) must not be left believing a recording is going.
+    expect(active).toHaveBeenLastCalledWith(false);
   });
 
   it("never delivers a transcript to a draft that has gone away (session switch)", async () => {

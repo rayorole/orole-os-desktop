@@ -550,7 +550,9 @@ attachments are mutually exclusive, as in the daemon.
 `Conversation.tsx` is a `ThreadPrimitive` view: it scrolls back (older pages load near the top without moving
 the reader), sticks to the bottom while following a stream, announces "Responding"/"Done" in a polite live
 region, and dims queued user messages ("Queued"). `Composer.tsx`: Enter sends, Shift+Enter inserts a newline, IME
-composition never sends; Send stays available while a reply runs (the daemon queues the message) next to Stop;
+composition never sends; Send stays available while a reply runs (the daemon queues the message) next to Stop; the
+dictation button stays beside Send whatever the draft holds (a transcript is appended to it), and is hidden only while a
+reply runs, except for a recording already under way, which keeps its control;
 the `+` menu holds Attach files, Research mode, read-only tool chips and Bot settings. There is no @mention picker
 (the daemon has no routing for it). `parts/` holds the pure message renderers shared with the bot builder's live
 preview (`ChatMessageView`, `MessageParts`), so a preview draws exactly what the conversation draws.

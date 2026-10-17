@@ -169,6 +169,19 @@ describe("chat store sync", () => {
     expect(useChat.getState()).toMatchObject({ ready: true, error: null });
   });
 
+  it("does not keep a bot running that finished while the daemon link was down", async () => {
+    bridge.bots.mockResolvedValue([bot("a", { running: true })]);
+    stop = useChat.getState().startSync();
+    await settle();
+    expect(useChat.getState().running.a).toBe(true);
+    useDaemon.setState({ link: "offline" });
+    expect(useChat.getState().running).toEqual({});
+    bridge.bots.mockResolvedValue([bot("a", { running: false })]);
+    useDaemon.setState({ link: "connected" });
+    await settle();
+    expect(useChat.getState().running.a).toBe(false);
+  });
+
   it("surfaces a load failure", async () => {
     bridge.bots.mockRejectedValue(new Error("boom"));
     await useChat.getState().load();
