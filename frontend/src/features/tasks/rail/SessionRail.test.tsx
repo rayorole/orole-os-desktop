@@ -18,7 +18,7 @@ import { SessionRail } from "./SessionRail";
 let seq = 0;
 const subagent = (at: string, data: Record<string, string>): AgentEvent => ({ id: ++seq, sessionId: "s", at, kind: "subagent", text: "", data });
 const session = (patch: Partial<Session> = {}) => ({ id: "s", title: "Fix the parser", task: "", kind: "claude", machine: "local", project: "C:\\repo", dir: "C:\\repo", live: false, status: "done", branch: "fix/parser", files: 3, additions: 120, deletions: 4, prUrl: "", prNumber: 0, updatedAt: "2026-10-15T10:00:00Z", ...patch }) as Session;
-const server = (patch: Partial<ServerState>): ServerState => ({ id: "gh", name: "GitHub", url: "https://mcp.example.com/mcp", transport: "", adapter: "", enabled: true, authKind: "oauth", oauthClientId: "", scopes: "", createdAt: 0, status: "connected", authorized: true, toolCount: 3, ...patch });
+const server = (patch: Partial<ServerState>): ServerState => ({ id: "gh", name: "GitHub", url: "https://mcp.example.com/mcp", transport: "", adapter: "", enabled: true, authKind: "oauth", oauthClientId: "", scopes: "", tokenHeader: "", createdAt: 0, status: "connected", authorized: true, toolCount: 3, ...patch });
 
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
 afterEach(cleanup);

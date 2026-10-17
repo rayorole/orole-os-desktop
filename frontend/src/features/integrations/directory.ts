@@ -28,6 +28,11 @@ export interface Connector {
    * sign-in always starts right after adding.
    */
   client?: { scopes: string; help: string };
+  /**
+   * The server takes an API key in this header instead of browser sign-in (Similarweb). The key goes
+   * to the credential store; no sign-in starts.
+   */
+  apiKey?: { header: string; help: string };
   native?: "github";
 }
 
@@ -36,6 +41,8 @@ export interface Connector {
  * RFC 9728 protected-resource metadata and its authorization server accepts dynamic client
  * registration, so Orole's OAuth flow can connect with nothing more than a click.
  * Servers that need a pre-registered client (Slack, Render, Asana, ...) are left to "Custom connector".
+ * Similarweb is the exception with an API key: its OAuth server sits behind a firewall that refuses every
+ * request naming a loopback redirect (http://127.0.0.1/...), which a desktop app's sign-in needs.
  */
 const ENTRIES: Omit<Connector, "logo">[] = [
   { id: "github", name: "GitHub", description: "Search repos and PRs", about: "Search repositories and code, read issues and pull requests, check CI, and work with your notifications through the GitHub CLI you are already signed in with.", category: "Developer", featured: true, native: "github" },
@@ -68,7 +75,8 @@ const ENTRIES: Omit<Connector, "logo">[] = [
   { id: "apollo", name: "Apollo", description: "Prospect people and companies", about: "Search and enrich people and organizations in Apollo.io for sales prospecting.", category: "Productivity", url: "https://mcp.apollo.io/mcp" },
   { id: "figma", name: "Figma", description: "Read your designs", about: "Read Figma designs and their structure, variables and components to turn them into code.", category: "Design", url: "https://mcp.figma.com/mcp" },
   { id: "mobbin", name: "Mobbin", description: "Search UI design references", about: "Search Mobbin's library of real app screens, flows and website sections for design reference.", category: "Design", url: "https://api.mobbin.com/mcp" },
-  { id: "similarweb", name: "Similarweb", description: "Website and market traffic data", about: "Look up website traffic, audience, competitors and market data from Similarweb.", category: "Analytics", url: "https://mcp.similarweb.com" },
+  { id: "similarweb", name: "Similarweb", description: "Website and market traffic data", about: "Look up website traffic, audience, competitors and market data from Similarweb.", category: "Analytics", url: "https://mcp.similarweb.com",
+    apiKey: { header: "api-key", help: "Similarweb connects with an API key from a plan with API access (API-only, Business or Enterprise). An account admin creates one at pro.similarweb.com under Settings › Account › API, then turns it on in the Activation column." } },
 
   { id: "mixpanel", name: "Mixpanel", description: "Query product analytics", about: "Query Mixpanel events, funnels and retention for your projects.", category: "Analytics", url: "https://mcp.mixpanel.com/mcp" },
 ];

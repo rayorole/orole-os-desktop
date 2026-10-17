@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -270,12 +272,15 @@ func validateAdd(p *AddParams) error {
 	}
 	switch p.AuthKind {
 	case AuthNone, AuthOAuth:
-		if p.BearerToken != "" {
-			return fmt.Errorf("%w: bearer token given but auth kind is %s", ErrBadRequest, p.AuthKind)
+		if p.BearerToken != "" || p.TokenHeader != "" {
+			return fmt.Errorf("%w: bearer token or token header given but auth kind is %s", ErrBadRequest, p.AuthKind)
 		}
 	case AuthBearer:
 		if strings.TrimSpace(p.BearerToken) == "" {
 			return fmt.Errorf("%w: bearer token required", ErrBadRequest)
+		}
+		if p.TokenHeader != "" && (!tokenHeaderPattern.MatchString(p.TokenHeader) || reservedTokenHeader(p.TokenHeader)) {
+			return fmt.Errorf("%w: token header must be a plain header name that HTTP or MCP does not already use (Authorization, Host, Mcp-Session-Id, ...)", ErrBadRequest)
 		}
 	default:
 		return fmt.Errorf("%w: unknown auth kind", ErrBadRequest)
@@ -286,6 +291,20 @@ func validateAdd(p *AddParams) error {
 	}
 	p.Scopes = strings.Join(strings.Fields(p.Scopes), " ")
 	return nil
+}
+
+// tokenHeaderPattern is an RFC 9110 field name restricted to letters, digits and hyphens.
+var tokenHeaderPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,63}$`)
+
+// reservedTokenHeader reports headers the HTTP transport or the MCP client sets itself;
+// Authorization is the plain bearer case, chosen by leaving the token header empty.
+func reservedTokenHeader(name string) bool {
+	low := strings.ToLower(name)
+	return strings.HasPrefix(low, "proxy-") || strings.HasPrefix(low, "sec-") || strings.HasPrefix(low, "mcp-") || slices.Contains([]string{
+		"authorization", "host", "content-length", "content-type", "content-encoding", "accept", "accept-encoding",
+		"transfer-encoding", "connection", "keep-alive", "upgrade", "te", "trailer", "expect", "cookie",
+		"origin", "referer", "user-agent", "last-event-id", "forwarded", "via",
+	}, low)
 }
 
 // Add registers and (if enabled, the default) connects a server.
@@ -303,7 +322,7 @@ func (m *Manager) Add(ctx context.Context, p AddParams) (ServerState, error) {
 		}
 	}
 	cfg := ServerConfig{ID: uuid.NewString(), Name: p.Name, URL: p.URL, Transport: "streamable-http", Adapter: p.Adapter,
-		Enabled: true, AuthKind: p.AuthKind, OAuthClientID: p.OAuthClientID, Scopes: p.Scopes, CreatedAt: time.Now().Unix()}
+		Enabled: true, AuthKind: p.AuthKind, OAuthClientID: p.OAuthClientID, Scopes: p.Scopes, TokenHeader: p.TokenHeader, CreatedAt: time.Now().Unix()}
 	// Secrets first: if the credential store refuses, no row is created.
 	if p.AuthKind == AuthBearer {
 		if err := m.authSession(cfg.ID).Set(&credBlob{Kind: "bearer", AccessToken: strings.TrimSpace(p.BearerToken)}); err != nil {

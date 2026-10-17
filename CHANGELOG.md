@@ -8,6 +8,9 @@ notes. See `docs/development/updates.md`.
 
 ## Unreleased
 
+### Fixed
+- Similarweb now connects with an API key instead of failing with "HTTP 403 client registration refused". Similarweb's sign-in server refuses every desktop app (any request that names a `127.0.0.1` or `localhost` return address), so browser sign-in cannot work there. Adding Similarweb asks for an API key from your Similarweb account (API-only, Business or Enterprise plan; an account admin creates it under Settings › Account › API), which is kept in Windows Credential Manager and sent in Similarweb's `api-key` header. Remove a Similarweb connection added earlier and add it again.
+
 ## 0.4.2-dev - 2026-10-17
 
 ### Fixed

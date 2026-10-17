@@ -25,7 +25,7 @@ import { DIRECTORY, nameFromUrl, serverFor } from "./directory";
 
 const server = (patch: Partial<ServerState>): ServerState => ({
   id: "s1", name: "Vercel", url: "https://mcp.vercel.com", transport: "streamable-http", adapter: "", enabled: true,
-  authKind: "oauth", oauthClientId: "", scopes: "", createdAt: 0, status: "connected", authorized: true, toolCount: 3, ...patch,
+  authKind: "oauth", oauthClientId: "", scopes: "", tokenHeader: "", createdAt: 0, status: "connected", authorized: true, toolCount: 3, ...patch,
 });
 
 beforeEach(() => {
@@ -107,6 +107,19 @@ describe("Integrations", () => {
       url: "https://gmailmcp.googleapis.com/mcp/v1", authKind: "oauth", oauthClientId: "abc.apps.googleusercontent.com", clientSecret: "s3cret",
       scopes: expect.stringContaining("gmail.readonly"),
     }));
+  });
+
+  it("connects Similarweb with an API key sent in its api-key header, never browser sign-in", async () => {
+    api.add.mockResolvedValue(server({ id: "w1", name: "Similarweb", url: "https://mcp.similarweb.com", authKind: "bearer", tokenHeader: "api-key", status: "connecting", authorized: true }));
+    render(<Integrations />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Similarweb" }));
+    expect(api.add).not.toHaveBeenCalled();
+    fireEvent.change(await screen.findByLabelText("API key"), { target: { value: " sw-key " } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(api.add).toHaveBeenCalledWith(expect.objectContaining({
+      url: "https://mcp.similarweb.com", authKind: "bearer", bearerToken: "sw-key", tokenHeader: "api-key",
+    })));
+    expect(api.startAuth).not.toHaveBeenCalled();
   });
 
   it("moves a connected entry out of the directory and offers Manage", async () => {

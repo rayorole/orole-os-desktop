@@ -73,7 +73,7 @@ function ServerRow({ server, changed }: { server: ServerState; changed: () => vo
 
   const control = server.enabled && server.status === "auth_required"
     ? server.authKind === "bearer"
-      ? <Button size="xs" variant="secondary" onClick={() => useUI.getState().openSettings("integrations")}>Replace token</Button>
+      ? <Button size="xs" variant="secondary" onClick={() => useUI.getState().openSettings("integrations")}>{server.tokenHeader ? "Replace key" : "Replace token"}</Button>
       : <Button size="xs" variant="secondary" loading={action.busy} onClick={() => run(() => MCP.startAuth(server.id))}>Sign in</Button>
     : server.enabled && server.status === "backoff"
       ? <Button size="xs" variant="secondary" loading={action.busy} onClick={() => run(() => MCP.connect(server.id))}>Reconnect</Button>

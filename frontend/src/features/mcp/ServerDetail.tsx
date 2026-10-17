@@ -57,6 +57,7 @@ export function ServerSettings({ server, connector, changed, onRemoved }: {
   const signedIn = server.status === "connected";
   const waiting = authStarted && !signedIn;
   const bearer = server.authKind === "bearer";
+  const keyHeader = bearer ? server.tokenHeader : "";
 
   return (
     <section aria-label={server.name} className="flex max-w-2xl min-w-0 flex-col gap-5">
@@ -85,8 +86,14 @@ export function ServerSettings({ server, connector, changed, onRemoved }: {
         void run(async () => { await MCP.update(server.id, { bearerToken: token }); form.reset(); });
       }}>
         <Fieldset disabled={busy} className="flex flex-col gap-3">
-          <Field><FieldLabel htmlFor={`token-${server.id}`}>Access token</FieldLabel><Input id={`token-${server.id}`} name="token" type="password" required autoComplete="off" /><FieldDescription>This server uses a fixed bearer token instead of browser sign-in. The stored token is never shown; enter a new one to replace it.</FieldDescription></Field>
-          <Button type="submit" size="sm" variant={signedIn ? "outline" : "default"} className="self-start">Replace token</Button>
+          <Field>
+            <FieldLabel htmlFor={`token-${server.id}`}>{keyHeader ? "API key" : "Access token"}</FieldLabel>
+            <Input id={`token-${server.id}`} name="token" type="password" required autoComplete="off" />
+            <FieldDescription>{keyHeader
+              ? <>This server uses an API key, sent in the <code>{keyHeader}</code> header, instead of browser sign-in. The stored key is never shown; enter a new one to replace it.</>
+              : "This server uses a fixed bearer token instead of browser sign-in. The stored token is never shown; enter a new one to replace it."}</FieldDescription>
+          </Field>
+          <Button type="submit" size="sm" variant={signedIn ? "outline" : "default"} className="self-start">{keyHeader ? "Replace key" : "Replace token"}</Button>
         </Fieldset>
       </form>}
 

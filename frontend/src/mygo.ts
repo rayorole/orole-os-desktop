@@ -66,6 +66,8 @@ export interface AddParams {
   oauthClientId: string;
   scopes: string;
   bearerToken?: string;
+  /** send BearerToken in this header instead of Authorization: Bearer */
+  tokenHeader?: string;
   clientSecret?: string;
 }
 
@@ -2803,6 +2805,8 @@ export interface ServerState {
   oauthClientId: string;
   /** space separated override; "" = what the server asks for */
   scopes: string;
+  /** bearer kind: header carrying the token; "" = Authorization: Bearer */
+  tokenHeader: string;
   createdAt: number;
   status: McpStatus;
   lastError?: string;

@@ -378,7 +378,12 @@ func cloneValues(v url.Values) url.Values {
 // sdkHandler adapts an authSession to the MCP SDK's transport hook. It never starts an
 // interactive flow: a rejected token is refreshed once, anything else surfaces as
 // AuthRequiredError so the connection manager can show "authorization required".
-type sdkHandler struct{ a *authSession }
+type sdkHandler struct {
+	a *authSession
+	// tokenHeader is set for a bearer server whose static token travels in this header
+	// (see tokenHeaderTransport) rather than as Authorization: Bearer.
+	tokenHeader string
+}
 
 var _ auth.OAuthHandler = sdkHandler{}
 
@@ -387,7 +392,7 @@ type tokenSourceFunc func() (*oauth2.Token, error)
 func (f tokenSourceFunc) Token() (*oauth2.Token, error) { return f() }
 
 func (h sdkHandler) TokenSource(ctx context.Context) (oauth2.TokenSource, error) {
-	if has, _, _, _ := h.a.Snapshot(); !has {
+	if has, _, _, _ := h.a.Snapshot(); !has || h.tokenHeader != "" {
 		return nil, nil
 	}
 	return tokenSourceFunc(func() (*oauth2.Token, error) {
@@ -415,6 +420,9 @@ func (h sdkHandler) Authorize(ctx context.Context, req *http.Request, resp *http
 	}
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
+		if h.tokenHeader != "" {
+			return &AuthRequiredError{Reason: "the server rejected the key sent in the " + h.tokenHeader + " header"}
+		}
 		stale := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
 		if stale == "" {
 			return &AuthRequiredError{Reason: "server requires authorization", Scope: scope}
@@ -427,4 +435,38 @@ func (h sdkHandler) Authorize(ctx context.Context, req *http.Request, resp *http
 		return nil // retried once by the transport, then surfaced as an ordinary HTTP error
 	}
 	return nil
+}
+
+// tokenHeaderTransport adds a bearer server's static token in its configured header. Only
+// requests to the server's own origin get it: a redirect to another host never carries it.
+type tokenHeaderTransport struct {
+	base         http.RoundTripper
+	scheme, host string
+	header       string
+	a            *authSession
+}
+
+func (t *tokenHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Scheme != t.scheme || !strings.EqualFold(req.URL.Host, t.host) {
+		return t.base.RoundTrip(req)
+	}
+	tok, err := t.a.AccessToken(req.Context())
+	if errors.Is(err, ErrNoCredentials) {
+		return t.base.RoundTrip(req) // the server's 401 then reports authorization required
+	}
+	if err != nil {
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		return nil, err
+	}
+	r := req.Clone(req.Context())
+	r.Header.Set(t.header, tok)
+	return t.base.RoundTrip(r)
+}
+
+func (t *tokenHeaderTransport) CloseIdleConnections() {
+	if c, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		c.CloseIdleConnections()
+	}
 }

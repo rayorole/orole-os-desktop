@@ -50,6 +50,9 @@ type Options struct {
 	// ModernOnly serves only the stateless 2026-07-28 protocol, like Orole Drive and Mail,
 	// which reject the legacy initialize handshake with UnsupportedProtocolVersion.
 	ModernOnly bool
+	// KeyHeader makes the MCP endpoint take its token from this header instead of
+	// Authorization: Bearer, like Similarweb's api-key header.
+	KeyHeader string
 }
 
 // AuthzRequest records one authorization request.
@@ -346,6 +349,9 @@ func (s *Server) bearer(next http.Handler) http.Handler {
 			return
 		}
 		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if s.opts.KeyHeader != "" {
+			tok = r.Header.Get(s.opts.KeyHeader)
+		}
 		s.mu.Lock()
 		ti, ok := s.access[tok]
 		valid := ok && tok != "" && time.Now().Before(ti.expires) && ti.resource == s.MCPURL

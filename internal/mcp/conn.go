@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -272,6 +273,15 @@ func (c *conn) dial(ctx context.Context) (*sdk.ClientSession, *http.Client, erro
 	if err != nil {
 		return nil, nil, err
 	}
+	handler := sdkHandler{a: c.m.authSession(cfg.ID)}
+	if cfg.AuthKind == AuthBearer && cfg.TokenHeader != "" {
+		u, err := url.Parse(cfg.URL)
+		if err != nil {
+			return nil, nil, err
+		}
+		hc.Transport = &tokenHeaderTransport{base: hc.Transport, scheme: u.Scheme, host: u.Host, header: cfg.TokenHeader, a: handler.a}
+		handler.tokenHeader = cfg.TokenHeader
+	}
 	dctx, cancel := context.WithTimeout(ctx, c.m.connectTimeout)
 	defer cancel()
 	client := sdk.NewClient(&sdk.Implementation{Name: "orole-os", Title: "Orole OS", Version: c.m.version}, &sdk.ClientOptions{
@@ -284,7 +294,7 @@ func (c *conn) dial(ctx context.Context) (*sdk.ClientSession, *http.Client, erro
 		tr := &sdk.StreamableClientTransport{
 			Endpoint:     cfg.URL,
 			HTTPClient:   hc,
-			OAuthHandler: sdkHandler{a: c.m.authSession(cfg.ID)},
+			OAuthHandler: handler,
 			MaxRetries:   2,
 		}
 		return client.Connect(dctx, tr, &sdk.ClientSessionOptions{ProtocolVersion: version})

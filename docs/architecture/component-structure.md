@@ -275,7 +275,9 @@ Settings > Skills and Settings > Integrations (connectors and MCP servers in one
   `auth_required` (`useConnect.ts`). "Custom connector" takes only a name and URL. Registered servers appear under
   Connected with Manage, which opens `features/mcp/ServerDetail.tsx`: logo, Reauthenticate/Sign in, Disconnect, tool chips (click to turn a tool off), server URL, and a closed Advanced section (OAuth client, per-tool permission levels, diagnostics). Directory
   entries must answer 401 with protected-resource metadata and offer dynamic client registration; servers needing a
-  pre-registered client go through Custom connector and Manage. The old Settings > MCP section id still resolves here.
+  pre-registered client go through Custom connector and Manage. An entry with `apiKey` (Similarweb, whose OAuth server
+  refuses loopback redirects) opens `ApiKeyConnectorDialog` instead and adds a `bearer` server with that entry's
+  `tokenHeader`. The old Settings > MCP section id still resolves here.
   Mail and Drive embed `MCPSettings` (adapter mode) in their setup screens.
   Configuration search, palette commands, onboarding links and the status-bar button open this section.
   The custom dialog form uses `display: contents` so its scrollable body and footer participate in the popup's
