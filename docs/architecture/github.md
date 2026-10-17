@@ -14,10 +14,16 @@ github.com HTTPS/SSH remotes without ports or queries appear. "All projects" fan
 call per repository (four at a time); one failing repository is reported in a banner and does not hide the rest.
 Pull requests are filtered out.
 
-Filters: *Mine* sends `assignee=<login>`, *Unassigned* sends `assignee=none`, label chips send `labels` (all
-selected labels must match), state is open/closed/any. Free-text search matches title, repository, number,
+Filters sit on one toolbar row: *Mine* sends `assignee=<login>`, *Unassigned* sends `assignee=none`, the *Labels*
+menu sends `labels` (all selected labels must match; it lists up to 14 labels, selected and most-used first, and
+keeps its order while open), state is open/closed/any. Free-text search matches title, repository, number,
 author, assignees and labels **within the issues already loaded** (50 per repository, *Load more* extends it);
 it does not call GitHub's search API, which is rate-limited separately.
+
+List rows show the title, `repo#number`, last update, comment count and first assignee; labels and the author are
+shown in the issue itself. Keyboard shortcuts have no on-screen hint bar: `/` search, `J`/`K` (or arrows) move,
+`X` select, `S` start an agent, `G` open on GitHub. The issue header puts the title first, then state, number and
+author; Start an agent is the primary action, Open on GitHub and Refresh are icon buttons beside the title.
 
 The thread uses `Message`/`Bubble`. Comment text is untrusted Markdown rendered as React elements; `@login`
 and `#123` references are linked, never executed. The composer completes `@` from the issue's participants and

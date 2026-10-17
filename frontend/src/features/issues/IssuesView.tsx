@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, CircleAlert, MessageSquare, Search } from "lucide-react";
+import { Bot, ChevronDown, CircleAlert, MessageSquare, Search, Tag } from "lucide-react";
 import { GitHub, type Issue, type Label } from "@/mygo";
 import { inDesktop } from "@/lib/backend";
 import { cn } from "@/lib/utils";
@@ -7,13 +7,14 @@ import { useProjects } from "@/stores/projects";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Kbd } from "@/components/ui/kbd";
+import { Menu, MenuCheckboxItem, MenuGroup, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Select, SelectGroup, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { NeedsDesktop } from "@/features/shared/States";
 import { SetupScreen } from "@/features/github/SetupScreen";
-import { EmptyLine, IssueStateIcon, LabelChip, RefreshButton, agoIso, useAsync } from "@/features/github/shared";
+import { EmptyLine, IssueStateIcon, RefreshButton, agoIso, labelColor, useAsync } from "@/features/github/shared";
 import { useGitHub } from "@/features/github/store";
 import { IssueDetail } from "./IssueDetail";
 import { PersonAvatar } from "./PersonAvatar";
@@ -72,7 +73,9 @@ function IssueBrowser({ me }: { me: string }) {
     const short = repos.map((repo) => repo.split("/")[1]!);
     return new Set(short.filter((name, index) => short.indexOf(name) !== index));
   }, [repos]);
-  const chips = useMemo(() => rankLabels(mergeLabels(catalog.data ?? [], (result?.issues ?? []).flatMap((issue) => issue.labels)), result?.issues ?? [], labels).slice(0, 14), [catalog.data, result, labels]);
+  const labelOptions = useMemo(() => rankLabels(mergeLabels(catalog.data ?? [], (result?.issues ?? []).flatMap((issue) => issue.labels)), result?.issues ?? [], labels).slice(0, 14), [catalog.data, result, labels]);
+  // The ranking puts selected labels first; freeze it while the menu is open so items do not move under the pointer.
+  const [openLabelOrder, setOpenLabelOrder] = useState<Label[] | null>(null);
   const related = useMemo(() => (result?.issues ?? []).filter((issue) => issue.repo === selected?.repo).map((issue) => ({ number: issue.number, title: issue.title })), [result, selected?.repo]);
   // Selection survives search and filter changes; it only counts issues that are still loaded.
   const chosen = useMemo(() => (result?.issues ?? []).filter((issue) => checked.includes(keyOf(issue))), [result, checked]);
@@ -114,6 +117,19 @@ function IssueBrowser({ me }: { me: string }) {
           <SelectTrigger size="sm" aria-label="State" className="w-auto min-w-0"><SelectValue>{STATES.find((item) => item.value === state)?.label}</SelectValue></SelectTrigger>
           <SelectPopup><SelectGroup>{STATES.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectPopup>
         </Select>
+        {(labelOptions.length > 0 || labels.length > 0) && <Menu onOpenChange={(open) => setOpenLabelOrder(open ? labelOptions : null)}>
+          <MenuTrigger render={<Button size="sm" variant="outline" aria-label={labels.length ? `Labels: ${labels.join(", ")}` : "Labels"} className="max-w-56" />}>
+            <Tag data-icon="inline-start" /><span className="truncate">{labels.length === 0 ? "Labels" : labels.length === 1 ? labels[0] : `${labels.length} labels`}</span><ChevronDown data-icon="inline-end" />
+          </MenuTrigger>
+          <MenuPopup align="start" className="max-h-80 w-60">
+            <MenuGroup aria-label="Labels">
+              {(openLabelOrder ?? labelOptions).map((label) => <MenuCheckboxItem key={label.name} checked={labels.includes(label.name)} onCheckedChange={() => toggleLabel(label.name)}>
+                <span className="flex min-w-0 items-center gap-2"><span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: labelColor(label) }} /><span className="truncate">{label.name}</span></span>
+              </MenuCheckboxItem>)}
+            </MenuGroup>
+            {labels.length > 0 && <><MenuSeparator /><MenuItem onClick={() => { setLabels([]); setLimit(PAGE); }}>Clear labels</MenuItem></>}
+          </MenuPopup>
+        </Menu>}
         <span className="flex-1" />
         <Select value={scope?.id ?? "all"} onValueChange={(value) => { if (value) chooseScope(value); }}>
           <SelectTrigger size="sm" aria-label="Project" className="w-auto min-w-0 max-w-56"><SelectValue>{scope?.name ?? "All projects"}</SelectValue></SelectTrigger>
@@ -124,13 +140,6 @@ function IssueBrowser({ me }: { me: string }) {
         </Select>
         <RefreshButton a={feed} />
       </div>
-      {chips.length > 0 && <div role="group" aria-label="Labels" className="flex flex-wrap items-center gap-1.5">
-        {chips.map((label) => {
-          const on = labels.includes(label.name);
-          return <button key={label.name} type="button" aria-pressed={on} onClick={() => toggleLabel(label.name)} className={cn("inline-flex items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring", on ? "ring-2 ring-ring" : "opacity-80 hover:opacity-100")}><LabelChip label={label} /></button>;
-        })}
-        {labels.length > 0 && <Button size="xs" variant="ghost" onClick={() => { setLabels([]); setLimit(PAGE); }}>Clear labels</Button>}
-      </div>}
       {!!result?.failures.length && <div role="alert" className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/8 px-2 py-1.5 text-warning-foreground text-xs">
         <CircleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
         <span className="min-w-0 flex-1 break-words">Could not load {result.failures.map((failure) => `${failure.repo} (${failure.message})`).join("; ")}.</span>
@@ -142,16 +151,16 @@ function IssueBrowser({ me }: { me: string }) {
         <div className="min-h-0 flex-1 overflow-auto">
           {feed.loading && !result && <div role="status" className="flex items-center justify-center gap-2 p-6 text-muted-foreground text-sm"><Spinner className="size-4" />Loading issues…</div>}
           {result && issues.length === 0 && <EmptyLine>{emptyText(query, labels, ownership, state, result.issues.length > 0)}</EmptyLine>}
-          <ul ref={list} className="flex flex-col gap-0.5 p-2">
+          <ul ref={list} className="flex flex-col gap-px p-2">
             {issues.map((issue) => {
               const key = keyOf(issue);
               const active = selected && keyOf(selected) === key;
               const on = checked.includes(key);
               const assignee = issue.assignees[0];
               return <li key={key}>
-                <div className={cn("group flex gap-2 rounded-lg px-2 py-2 transition-colors hover:bg-muted/60", active && "bg-muted")}>
+                <div className={cn("group flex items-start gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-muted/60", active && "bg-muted")}>
                   <Tooltip disabled={on || checked.length < MAX_SELECTED}>
-                    <TooltipTrigger render={<span className="relative mt-0.5 size-4 shrink-0" />}>
+                    <TooltipTrigger render={<span className="relative mt-px size-4 shrink-0" />}>
                       <span aria-hidden className={cn("absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0 group-has-[[data-slot=checkbox]:focus-visible]:opacity-0", (on || chosen.length > 0) && "opacity-0")}><IssueStateIcon issue={issue} /></span>
                       <Checkbox aria-label={`Select ${key}`} checked={on} disabled={!on && checked.length >= MAX_SELECTED}
                         onCheckedChange={() => setChecked((current) => toggled(current, key))}
@@ -159,16 +168,15 @@ function IssueBrowser({ me }: { me: string }) {
                     </TooltipTrigger>
                     <TooltipPopup>Select up to {MAX_SELECTED} issues</TooltipPopup>
                   </Tooltip>
-                  <button type="button" aria-current={active ? "true" : undefined} onClick={() => setPicked(key)} className="flex min-w-0 flex-1 gap-2 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <button type="button" aria-current={active ? "true" : undefined} onClick={() => setPicked(key)} className="flex min-w-0 flex-1 items-start gap-3 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     <span className="min-w-0 flex-1">
                       <span className="line-clamp-2 font-medium text-[13px] leading-snug">{issue.title}</span>
-                      <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{names.has(issue.repo.split("/")[1]!) || repos.length > 1 ? issue.repo : issue.repo.split("/")[1]}#{issue.number} · {agoIso(issue.updated_at)} · {issue.user.login}</span>
-                      {issue.labels.length > 0 && <span className="mt-1 flex flex-wrap gap-1">{issue.labels.map((label) => <LabelChip key={label.id} label={label} />)}</span>}
+                      <span className="mt-0.5 block truncate text-[11px] text-muted-foreground tabular-nums">{names.has(issue.repo.split("/")[1]!) || repos.length > 1 ? issue.repo : issue.repo.split("/")[1]}#{issue.number} · {agoIso(issue.updated_at)}</span>
                     </span>
-                    <span className="flex shrink-0 flex-col items-end gap-1 text-[11px] text-muted-foreground">
-                      {assignee && <Tooltip><TooltipTrigger render={<span className="inline-flex" />}><PersonAvatar login={assignee.login} className="size-5 text-[10px]" /></TooltipTrigger><TooltipPopup>Assigned to {assignee.login}</TooltipPopup></Tooltip>}
+                    {(assignee || issue.comments > 0) && <span className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground tabular-nums">
                       {issue.comments > 0 && <span className="inline-flex items-center gap-0.5"><MessageSquare aria-hidden className="size-3" />{issue.comments}</span>}
-                    </span>
+                      {assignee && <Tooltip><TooltipTrigger render={<span className="inline-flex" />}><PersonAvatar login={assignee.login} className="size-5 text-[10px]" /></TooltipTrigger><TooltipPopup>Assigned to {assignee.login}</TooltipPopup></Tooltip>}
+                    </span>}
                   </button>
                 </div>
               </li>;
@@ -176,17 +184,11 @@ function IssueBrowser({ me }: { me: string }) {
           </ul>
           {result?.full && <div className="p-2 text-center"><Button size="xs" variant="outline" disabled={feed.loading} onClick={() => setLimit((current) => current + PAGE)}>Load more</Button></div>}
         </div>
-        {chosen.length > 0 ? <footer className="flex shrink-0 items-center gap-2 border-t px-3 py-2 text-sm">
+        {chosen.length > 0 && <footer className="flex shrink-0 items-center gap-2 border-t px-3 py-2 text-sm">
           <span className="font-medium tabular-nums">{chosen.length} selected</span>
           <Button size="xs" variant="ghost" onClick={() => setChecked([])}>Clear</Button>
           <span className="flex-1" />
           <Button size="sm" onClick={() => setBulk(true)}><Bot data-icon="inline-start" />Start {chosen.length} {chosen.length === 1 ? "agent" : "agents"}</Button>
-        </footer> : <footer className="flex shrink-0 items-center gap-3 border-t px-3 py-1.5 text-[11px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1"><Kbd>J</Kbd><Kbd>K</Kbd>move</span>
-          <span className="inline-flex items-center gap-1"><Kbd>X</Kbd>select</span>
-          <span className="inline-flex items-center gap-1"><Kbd>S</Kbd>start agent</span>
-          <span className="inline-flex items-center gap-1"><Kbd>G</Kbd>GitHub</span>
-          <span className="ml-auto tabular-nums">{issues.length}{result?.full ? "+" : ""}</span>
         </footer>}
       </section>
       <div className="min-w-0 flex-1 overflow-auto">

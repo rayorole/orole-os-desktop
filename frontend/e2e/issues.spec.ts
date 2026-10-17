@@ -104,11 +104,15 @@ test("lists issues across projects, filters by ownership, label and project, and
   await page.getByRole("button", { name: "All", exact: true }).click();
   await expect(list.getByRole("button")).toHaveCount(5);
 
+  await page.getByRole("button", { name: "Labels", exact: true }).click();
   const labels = page.getByRole("group", { name: "Labels" });
-  await labels.getByRole("button", { name: "bug" }).click();
+  await labels.getByRole("menuitemcheckbox", { name: "bug" }).click();
   await expect(list.getByRole("button")).toHaveCount(3);
   expect((await calls<[IssueQuery]>(page, "GitHub.Issues")).at(-1)![0]).toMatchObject({ labels: ["bug"] });
-  await labels.getByRole("button", { name: "bug" }).click();
+  await expect(page.getByRole("button", { name: "Labels: bug", exact: true })).toBeVisible();
+  await labels.getByRole("menuitemcheckbox", { name: "bug" }).click();
+  await page.keyboard.press("Escape");
+  await expect(labels).toHaveCount(0);
 
   await page.getByLabel("Search issues").fill("credentials");
   await expect(list.getByRole("button")).toHaveCount(1);

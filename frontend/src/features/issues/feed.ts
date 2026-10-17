@@ -45,14 +45,14 @@ export function matchesQuery(issue: Issue, query: string): boolean {
   return terms.every((term) => haystack.includes(term));
 }
 
-/** Labels for the filter row: the repositories' own labels first, then any seen on loaded issues, merged by name. */
+/** Labels for the Labels filter menu: the repositories' own labels first, then any seen on loaded issues, merged by name. */
 export function mergeLabels(...groups: Label[][]): Label[] {
   const byName = new Map<string, Label>();
   for (const label of groups.flat()) if (!byName.has(label.name.toLowerCase())) byName.set(label.name.toLowerCase(), label);
   return [...byName.values()];
 }
 
-/** Most-used labels in the current results first so the row favours what exists, then alphabetical; selected labels always lead. */
+/** Most-used labels in the current results first so the menu favours what exists, then alphabetical; selected labels always lead. */
 export function rankLabels(labels: Label[], issues: Issue[], selected: string[]): Label[] {
   const uses = new Map<string, number>();
   for (const issue of issues) for (const label of issue.labels) uses.set(label.name.toLowerCase(), (uses.get(label.name.toLowerCase()) ?? 0) + 1);

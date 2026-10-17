@@ -49,20 +49,24 @@ function IssueBody({ repo, issue, comments, related, refreshing, error, reload, 
   const role = (login: string, association: string) => login === issue.user.login ? "Author" : ROLES[association];
   const startButton = <Button size="sm" disabled={!agent.canStart} onClick={agent.start}><Bot data-icon="inline-start" />{agent.saved.data ? "Review saved launch" : "Start an agent"}<Kbd>S</Kbd></Button>;
 
-  return <article aria-label={`${repo}#${issue.number}`} className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4 p-5">
-    <header className="flex flex-col gap-2">
-      <p className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
+  return <article aria-label={`${repo}#${issue.number}`} className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-5 p-5">
+    <header className="flex flex-col gap-3">
+      <div className="flex items-start gap-2">
+        <h2 className="min-w-0 flex-1 break-words font-semibold text-lg leading-snug">{issue.title}</h2>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Tooltip><TooltipTrigger render={<Button size="icon-xs" variant="ghost" aria-label="Open on GitHub" onClick={() => void openExternal(issue.html_url)} />}><ExternalLink /></TooltipTrigger><TooltipPopup><span className="flex items-center gap-2">Open on GitHub <Kbd>G</Kbd></span></TooltipPopup></Tooltip>
+          <RefreshButton a={{ data: null, error, loading: refreshing, reload }} />
+        </div>
+      </div>
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-xs">
         <Badge variant={open ? "success" : "info"}>{open ? "Open" : issue.state_reason === "not_planned" ? "Closed (not planned)" : "Closed"}</Badge>
         <span className="font-mono">{repo}#{issue.number}</span>
-        <span>opened {agoIso(issue.created_at)} by <strong className="text-foreground">{issue.user.login}</strong></span>
+        <span>opened {agoIso(issue.created_at)} by <strong className="font-medium text-foreground">{issue.user.login}</strong></span>
       </p>
-      <h2 className="break-words font-semibold text-lg leading-snug">{issue.title}</h2>
       {issue.labels.length > 0 && <div className="flex flex-wrap gap-1">{issue.labels.map((label) => <LabelChip key={label.id} label={label} />)}</div>}
       <div className="flex flex-wrap items-center gap-2">
         {issue.pull_request ? <Tooltip><TooltipTrigger render={<span className="inline-flex" />}>{startButton}</TooltipTrigger><TooltipPopup>Pull requests cannot be assigned to an agent</TooltipPopup></Tooltip> : startButton}
-        <Button size="sm" variant="outline" onClick={() => void openExternal(issue.html_url)}><ExternalLink data-icon="inline-start" />Open on GitHub</Button>
         {!issue.pull_request && <StateButton repo={repo} issue={issue} onChanged={() => { reload(); onChanged(); }} />}
-        <RefreshButton a={{ data: null, error, loading: refreshing, reload }} />
       </div>
     </header>
     {error && <ErrorBox error={error} onRetry={reload} />}
@@ -82,8 +86,8 @@ function Entry({ login, when, role, you, body, repo }: { login: string; when: st
     <MessageContent>
       <div className="w-full min-w-0 overflow-hidden rounded-lg border bg-card">
         <MessageHeader className="justify-between gap-2 border-b px-3 py-1.5 text-xs group-has-data-[variant=ghost]/message:px-3">
-          <span className="truncate"><strong className="text-foreground">{login}</strong>{you && <span className="text-muted-foreground"> (you)</span>} <span className="text-muted-foreground">· {agoIso(when)}</span></span>
-          {role && <Badge size="sm" variant="outline">{role}</Badge>}
+          <span className="truncate"><strong className="font-medium text-foreground">{login}</strong>{you && <span className="text-muted-foreground"> (you)</span>} <span className="text-muted-foreground">· {agoIso(when)}</span></span>
+          {role && <span className="shrink-0 text-[11px] text-muted-foreground">{role}</span>}
         </MessageHeader>
         <Bubble variant="ghost" className="w-full max-w-full p-3"><BubbleContent><Markdown source={body} repo={repo} /></BubbleContent></Bubble>
       </div>

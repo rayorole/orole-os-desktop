@@ -1,19 +1,16 @@
 import { useEffect, useState } from "react";
-import { CalendarClock, Eye, Hand, Radio, Webhook, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUI } from "@/stores/ui";
 import { cn } from "@/lib/utils";
 import { api, errorText, type Topic, type Trigger, type Watch } from "./api";
+import { TriggerIcon } from "./BlockIcon";
 import { ChoiceField, JsonField, LinesField, NumberField, TextField } from "./fields";
 import { DEPLOYMENT_PRESETS, describeSchedule, eventFields, triggerSummary } from "./flow";
 import { useMcpServers } from "./pickers";
 
-const TYPES: { value: string; label: string; icon: LucideIcon }[] = [
-  { value: "manual", label: "Manual", icon: Hand },
-  { value: "schedule", label: "Schedule", icon: CalendarClock },
-  { value: "event", label: "App event", icon: Radio },
-  { value: "watch", label: "Watch", icon: Eye },
-  { value: "webhook", label: "Webhook", icon: Webhook },
+const TYPES = [
+  { value: "manual", label: "Manual" }, { value: "schedule", label: "Schedule" }, { value: "event", label: "App event" },
+  { value: "watch", label: "Watch" }, { value: "webhook", label: "Webhook" },
 ];
 const GITHUB_KINDS = [
   { value: "push", label: "Push to a branch" }, { value: "pr_opened", label: "Pull request opened" }, { value: "pr_merged", label: "Pull request merged" },
@@ -30,11 +27,11 @@ export function TriggerCard({ trigger, onChange, topics, issue, offline, invalid
       <p className="truncate text-sm font-medium">{triggerSummary(trigger, topics)}</p>
     </header>
     <div role="radiogroup" aria-label="Start this flow" className="flex flex-wrap gap-1">
-      {TYPES.map(({ value, label, icon: Icon }) => <button key={value} type="button" role="radio" aria-checked={trigger.type === value}
+      {TYPES.map(({ value, label }) => <button key={value} type="button" role="radio" aria-checked={trigger.type === value}
         onClick={() => patch(value === "watch" && !trigger.watch ? { type: value, watch: { source: "github", kind: "push", repo: "", branch: "" } } : { type: value })}
         className={cn("inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
           trigger.type === value ? "border-primary bg-primary/8 text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
-        <Icon aria-hidden className="size-3.5" />{label}
+        <TriggerIcon type={value} className="size-3.5" />{label}
       </button>)}
     </div>
     {typeIssue && <p role="alert" className="text-xs text-destructive-foreground">{typeIssue}</p>}

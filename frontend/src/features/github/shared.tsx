@@ -58,9 +58,11 @@ export function RefreshButton({ a }: { a: Async<unknown> }) {
 
 const HEX = /^[0-9a-fA-F]{6}$/;
 
-/** Label chip. Colour comes from GitHub, so it is validated before it reaches a style attribute. */
+/** A label's colour as CSS. It comes from GitHub, so it is validated before it reaches a style attribute. */
+export const labelColor = (label: Pick<Label, "color">) => (HEX.test(label.color) ? `#${label.color}` : "#888888");
+
 export function LabelChip({ label }: { label: Label }) {
-  const c = HEX.test(label.color) ? `#${label.color}` : "#888888";
+  const c = labelColor(label);
   return (
     <Tooltip><TooltipTrigger render={<span tabIndex={0} className="inline-flex h-4.5 max-w-40 items-center gap-1 rounded-full border px-1.5 text-[11px] leading-none" style={{ borderColor: `${c}88`, background: `${c}22` }} />}><span className="size-1.5 shrink-0 rounded-full" style={{ background: c }} /><span className="truncate">{label.name}</span></TooltipTrigger><TooltipPopup><span className="max-w-sm whitespace-pre-wrap break-words">{label.description || label.name}</span></TooltipPopup></Tooltip>
   );
