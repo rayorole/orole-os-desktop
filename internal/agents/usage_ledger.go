@@ -12,8 +12,9 @@ import (
 // Exactly one summable source per harness emits it, so nothing is counted twice:
 //   - Claude Code: the per-model deltas of result.modelUsage, which Claude Code keeps cumulative
 //     per process (falling back to result.usage, the per-turn total, when modelUsage carries no
-//     token counts). Assistant-message usage is a context reading and is never billed; it only
-//     feeds the live EvTokenEstimate.
+//     token counts). A resumed process restores the session's cumulative modelUsage, so its first
+//     result bills result.usage and only sets the baseline. Assistant-message usage is a context
+//     reading and is never billed; it only feeds the live EvTokenEstimate.
 //   - Codex: thread/tokenUsage/updated "last" (one model request), once per change of the
 //     thread's cumulative total, since Codex repeats the notification with unchanged totals.
 //   - Oh My Pi: message_end usage of each assistant message. get_state usage is occupancy only.

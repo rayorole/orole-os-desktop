@@ -127,7 +127,7 @@ func (c Claude) Start(ctx context.Context, h *Host, spec LaunchSpec) (Process, e
 	}
 	args = append([]string{"-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose",
 		"--permission-prompt-tool", "stdio"}, args...)
-	decoder := claudeDecoder{tools: make(map[string]ToolData), wantMode: permission}
+	decoder := claudeDecoder{tools: make(map[string]ToolData), wantMode: permission, resumed: spec.Resume != ""}
 	p, err := startPipe(spec.Dir, path, args, decoder.decode)
 	if err != nil {
 		return nil, err
@@ -457,6 +457,10 @@ type claudeDecoder struct {
 	wantMode string
 	// billed is the last modelUsage reading per model; results report its growth as EvTokens.
 	billed map[string]claudeBilled
+	// resumed is set for a process started with --resume until its first billed result. Claude Code
+	// then restores the session's cumulative modelUsage, so that result's growth includes usage an
+	// earlier process already billed.
+	resumed bool
 	// contextSent numbers get_context_usage requests; contextSeen is the newest reply applied.
 	contextSent, contextSeen uint64
 }
@@ -464,7 +468,9 @@ type claudeDecoder struct {
 // billedTokens turns a result into EvTokens. modelUsage is cumulative for this process and
 // split by model (it includes subagents and side requests), so each model's growth since the
 // previous result is billed once, with its reported cost. Without token counts in modelUsage
-// the per-turn result.usage is billed for the session's model instead.
+// the per-turn result.usage is billed for the session's model instead. So is the first result
+// of a resumed process, whose modelUsage only becomes the baseline: it may carry the totals an
+// earlier process billed, and nothing tells them apart from this turn's growth.
 func (d *claudeDecoder) billedTokens(m claudeMsg) []Event {
 	var thinking int64
 	if m.Usage != nil && m.Usage.OutputDetails != nil {
@@ -478,6 +484,10 @@ func (d *claudeDecoder) billedTokens(m claudeMsg) []Event {
 		}
 	}
 	slices.Sort(names)
+	baseline := d.resumed && len(names) > 0
+	if baseline {
+		d.resumed = false
+	}
 	for _, name := range names {
 		u := m.ModelUsage[name]
 		cur := claudeBilled{input: valueOr0(u.Input), output: valueOr0(u.Output), cacheRead: valueOr0(u.CacheRead), cacheWrite: valueOr0(u.CacheCreation)}
@@ -492,6 +502,9 @@ func (d *claudeDecoder) billedTokens(m claudeMsg) []Event {
 			d.billed = map[string]claudeBilled{}
 		}
 		d.billed[name] = cur
+		if baseline {
+			continue
+		}
 		t := TokenUsage{Source: "claude:result:modelUsage", Provider: "anthropic", Model: name,
 			Input: cur.input - prev.input, Output: cur.output - prev.output,
 			CacheRead: cur.cacheRead - prev.cacheRead, CacheWrite: cur.cacheWrite - prev.cacheWrite}
@@ -504,7 +517,7 @@ func (d *claudeDecoder) billedTokens(m claudeMsg) []Event {
 		}
 		out = append(out, tokensEvent(t)...)
 	}
-	if len(names) == 0 && m.Usage != nil {
+	if (len(names) == 0 || baseline) && m.Usage != nil {
 		out = tokensEvent(TokenUsage{Source: "claude:result:usage", Provider: "anthropic", Model: m.Model,
 			Input: valueOr0(m.Usage.Input), Output: valueOr0(m.Usage.Output), CacheRead: valueOr0(m.Usage.Cached),
 			CacheWrite: valueOr0(m.Usage.CacheCreation), Reasoning: thinking})

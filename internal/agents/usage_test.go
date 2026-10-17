@@ -74,6 +74,39 @@ func TestClaudeBillsModelUsageGrowthOnce(t *testing.T) {
 	}
 }
 
+// A resumed Claude Code process restores the session's cumulative modelUsage (observed with
+// Claude Code 2.1.289); a process that did not restore it starts from zero. Either way its first
+// result bills only that turn's own usage, and later results bill growth.
+func TestClaudeResumeDoesNotRebillEarlierUsage(t *testing.T) {
+	// Readings from a real resume: the previous process ended at 10/429/16351/15253, $0.0342961.
+	turn := `"usage":{"input_tokens":10,"output_tokens":58,"cache_read_input_tokens":31604,"cache_creation_input_tokens":1279,"output_tokens_details":{"thinking_tokens":51}}`
+	for name, modelUsage := range map[string]string{
+		"restored": `{"claude-haiku-4-5-20251001":{"inputTokens":20,"outputTokens":487,"cacheReadInputTokens":47955,"cacheCreationInputTokens":16532,"costUSD":0.0403145}}`,
+		"fresh":    `{"claude-haiku-4-5-20251001":{"inputTokens":10,"outputTokens":58,"cacheReadInputTokens":31604,"cacheCreationInputTokens":1279,"costUSD":0.0060184}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := &claudeDecoder{tools: map[string]ToolData{}, resumed: true}
+			got := billed(t, d.decode(nil, []byte(`{"type":"result","subtype":"success","result":"two",`+turn+`,"modelUsage":`+modelUsage+`}`)))
+			if len(got) != 1 || got[0].Input != 10 || got[0].Output != 58 || got[0].CacheRead != 31604 || got[0].CacheWrite != 1279 ||
+				got[0].Reasoning != 51 || got[0].Provider != "anthropic" || got[0].CostUSD != nil {
+				t.Fatalf("first result after resume: %+v", got)
+			}
+			var next map[string]map[string]float64
+			if err := json.Unmarshal([]byte(modelUsage), &next); err != nil {
+				t.Fatal(err)
+			}
+			u := next["claude-haiku-4-5-20251001"]
+			u["inputTokens"] += 3
+			u["outputTokens"] += 4
+			u["costUSD"] += 0.001
+			got = billed(t, d.decode(nil, []byte(`{"type":"result","subtype":"success","result":"three","usage":{"input_tokens":3,"output_tokens":4},"modelUsage":`+string(jraw(next))+`}`)))
+			if len(got) != 1 || got[0].Input != 3 || got[0].Output != 4 || got[0].CacheRead != 0 || got[0].CostUSD == nil || !near(*got[0].CostUSD, 0.001) {
+				t.Fatalf("second result after resume: %+v", got)
+			}
+		})
+	}
+}
+
 // Codex repeats tokenUsage notifications with unchanged totals; each request is billed once,
 // cached input is split out of input, and a resumed thread's first idle report is a baseline.
 func TestCodexBillsEachRequestOnce(t *testing.T) {
