@@ -444,7 +444,7 @@ The sidebar offers Home, Tasks (view id `agents`), Review, Automations and Setti
 editors and scrolling. Native deep links use `orole://open/settings/skills` and `orole://open/settings/mcp`;
 the allowlist is in `internal/applications/navigation.go`. Under the rows, the
 project tree expands each project to its **tasks**: dashboard-visible sessions associated by `Session.projectId`
-on the same machine, newest first, with status dots and "Needs you" or "Failed" badges. Older sessions without
+on the same machine, pinned first, then newest created (`startedAt`, id as tie-breaker; never activity, so rows stay put while tasks run), with status dots and "Needs you" or "Failed" badges. Older sessions without
 an ID still match their `Session.project` folder (`features/projects/tasks.ts`). Folderless projects offer
 "Start a task" immediately; they use a persistent daemon-owned workspace, not a user-selected folder.
 Worktrees are an implementation detail of a task; there is no worktree view. "Open tasks" filters the

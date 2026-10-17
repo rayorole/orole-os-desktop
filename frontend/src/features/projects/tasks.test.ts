@@ -8,7 +8,7 @@ const project = (over: Partial<Project>): Project => ({
 });
 const session = (over: Partial<Session>): Session => ({
   id: "s", kind: "claude", machine: "", project: "C:\\code\\alpha", dir: "C:\\code\\alpha", status: "working", review: "",
-  updatedAt: "2026-01-01T00:00:00Z", ...over,
+  startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", ...over,
 }) as Session;
 
 describe("pathKey", () => {
@@ -43,17 +43,40 @@ describe("groupTasksByProject", () => {
   const beta = project({ id: "p2", name: "beta", path: "C:\\code\\beta", isGit: false });
   const folderless = project({ id: "p3", name: "ideas", path: "" });
 
-  it("groups by project folder, newest first, including a worktree session by its project", () => {
+  it("groups by project folder, newest created first, including a worktree session by its project", () => {
     const sessions = [
-      session({ id: "old", updatedAt: "2026-01-01T00:00:00Z" }),
-      session({ id: "wt", dir: "C:\\code\\.orole-worktrees\\alpha\\x", updatedAt: "2026-01-03T00:00:00Z" }),
-      session({ id: "b", project: "C:\\code\\beta", updatedAt: "2026-01-02T00:00:00Z" }),
-      session({ id: "mid", updatedAt: "2026-01-02T00:00:00Z" }),
+      session({ id: "old", startedAt: "2026-01-01T00:00:00Z" }),
+      session({ id: "wt", dir: "C:\\code\\.orole-worktrees\\alpha\\x", startedAt: "2026-01-03T00:00:00Z" }),
+      session({ id: "b", project: "C:\\code\\beta", startedAt: "2026-01-02T00:00:00Z" }),
+      session({ id: "mid", startedAt: "2026-01-02T00:00:00Z" }),
     ];
     const grouped = groupTasksByProject(sessions, [alpha, beta, folderless]);
     expect(grouped.get("p1")?.map((s) => s.id)).toEqual(["wt", "mid", "old"]);
     expect(grouped.get("p2")?.map((s) => s.id)).toEqual(["b"]);
     expect(grouped.has("p3")).toBe(false);
+  });
+
+  it("keeps the order when activity timestamps, statuses and input order change", () => {
+    const base = [
+      session({ id: "a", startedAt: "2026-01-03T00:00:00Z", status: "working" }),
+      session({ id: "b", startedAt: "2026-01-02T00:00:00Z", status: "working" }),
+      session({ id: "c", startedAt: "2026-01-01T00:00:00Z", status: "working" }),
+    ];
+    const order = (list: Session[]) => groupTasksByProject(list, [alpha]).get("p1")?.map((s) => s.id);
+    const expected = ["a", "b", "c"];
+    expect(order(base)).toEqual(expected);
+    // The oldest task becomes the most recently active one, and statuses flip.
+    const busy = base.map((s) => s.id === "c" ? { ...s, updatedAt: "2026-02-01T00:00:00Z", status: "needs-you" as const } : { ...s, status: "done" as const });
+    expect(order(busy)).toEqual(expected);
+    expect(order([...busy].reverse())).toEqual(expected);
+    expect(projectTasks(busy, alpha).map((s) => s.id)).toEqual(expected);
+  });
+
+  it("breaks equal creation times by id and keeps pinned tasks first", () => {
+    const t = "2026-01-01T00:00:00Z";
+    const list = [session({ id: "z", startedAt: t }), session({ id: "m", startedAt: "2025-01-01T00:00:00Z", pinned: true }), session({ id: "a", startedAt: t })];
+    expect(groupTasksByProject(list, [alpha]).get("p1")?.map((s) => s.id)).toEqual(["m", "a", "z"]);
+    expect(groupTasksByProject([...list].reverse(), [alpha]).get("p1")?.map((s) => s.id)).toEqual(["m", "a", "z"]);
   });
 
   it("drops discarded sessions and sessions of no project", () => {

@@ -8,6 +8,9 @@ notes. See `docs/development/updates.md`.
 
 ## Unreleased
 
+### Fixed
+- Code tasks in the sidebar no longer swap places while they run. Each project lists its tasks pinned first, then newest created first, and a task keeps its row through tool calls, messages and status changes.
+
 ## 0.4.2-dev - 2026-10-17
 
 ### Fixed
