@@ -9,6 +9,7 @@ notes. See `docs/development/updates.md`.
 ## Unreleased
 
 ### Fixed
+- Signing in to Apollo no longer fails with "unknown scopes". Orole cut the list of permissions a server asks for at 512 characters, so for servers that ask for many (Apollo asks for 71) the last one was sent half-written. The whole list is now requested.
 - Code tasks in the sidebar no longer swap places while they run. Each project lists its tasks pinned first, then newest created first, and a task keeps its row through tool calls, messages and status changes.
 
 ## 0.4.2-dev - 2026-10-17
