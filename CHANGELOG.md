@@ -8,6 +8,12 @@ notes. See `docs/development/updates.md`.
 
 ## Unreleased
 
+### Changed
+- Token counts no longer include cache reads, the conversation context a coding agent re-sends with every request. Those were over 90% of the total and made a task look about ten times bigger than the work it did (a Claude task showed 1.2M tokens for about 101K of new input and output). A task's meter in chat, the run header in a task, and Home's Tokens, By agent, Latest sessions and All time widgets now count input + cache writes + output. Hover a count to see input, cache writes, cache reads, output and cost. Spend is unchanged.
+
+### Fixed
+- Resuming a Claude Code task no longer bills everything the task had used before again. A resumed Claude Code process reports the session's earlier usage as part of its first turn; that turn now counts only its own tokens. Usage recorded for earlier resumes stays as it was.
+
 ## 0.4.2-dev - 2026-10-17
 
 ### Fixed

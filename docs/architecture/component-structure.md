@@ -346,7 +346,8 @@ muted "Starting…" (or "Failed") row. Several launches can be pending at once; 
   is happening now (the call in flight, else the harness's activity line, else the latest step) with a ticking elapsed
   time while the turn runs, `Needs your input` while it waits, or `Worked for 2m 13s` (first to last event of the turn,
   omitted when under a second or unknown) with failed/stopped/incomplete variants; the last run also shows the session's
-  token count (per-turn and per-agent tokens are not recorded, so no node shows any). Under it, the main agent's node holds
+  token count, cache reads excluded, with the billed breakdown on hover (per-turn and per-agent tokens are not recorded,
+  so no node shows any). Under it, the main agent's node holds
   every step in recorded order: thoughts (title, body on expand), the messages it writes while working (live, compact,
   long ones folded), tool call cards, terminal results, sources, decided approvals and answered questions, and the plan
   (`AgentTodos`) where it was first written, with each plan step's work nested in it. Subagents (`subagent` events) hang
