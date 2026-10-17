@@ -111,6 +111,26 @@ describe("task rows in a bot reply", () => {
     expect(meter.textContent?.match(/—/g)).toHaveLength(3);
   });
 
+  it("meters tokens without cache reads and breaks the billed tokens down on hover", async () => {
+    // The task from #207: 1,199,955 billed tokens, 1,099,170 of them cache reads.
+    const billed = { input: 3_285, cacheWrite: 61_300, cacheRead: 1_099_170, output: 36_200, reasoning: 0, total: 1_199_955, work: 100_785, costUsd: 4.12, unpriced: [] };
+    useAgents.setState((s) => ({ sessions: { ...s.sessions, t1: { ...s.sessions.t1!, tokens: 102_785, billed } } }));
+    render(<ChatView />);
+    const tokens = within(chips()[0]!).getByText((_, el) => el?.getAttribute("data-slot") === "task-tokens");
+    expect(tokens).toHaveTextContent("102.8K");
+    expect(tokens).not.toHaveTextContent("1.2M");
+    fireEvent.pointerEnter(tokens, { pointerType: "mouse" });
+    fireEvent.pointerMove(tokens, { pointerType: "mouse" });
+    fireEvent.mouseEnter(tokens);
+    fireEvent.mouseMove(tokens);
+    const breakdown = await screen.findByText((_, el) => el?.getAttribute("data-slot") === "token-breakdown", {}, { timeout: 3000 });
+    const rows = [...breakdown.querySelectorAll("dt")].map((dt) => `${dt.textContent} ${dt.nextElementSibling?.textContent}`);
+    expect(rows).toEqual(["Input 3,285", "Cache write 61,300", "Cache read 1,099,170", "Output 36,200", "Cost $4.12"]);
+    // The running turn's estimate is in the headline but not billed yet.
+    expect(breakdown).toHaveTextContent("+2,000 estimated for the running turn");
+    expect(breakdown).toHaveTextContent("Cache reads are left out: they are the context re-sent on each request.");
+  });
+
   it("names a model alias after the model the harness's catalog says it runs, before the agent reports its id", async () => {
     api.options.mockResolvedValue({ harnesses: [{ id: "claude", models: [{ id: "opus", name: "Opus (claude-opus-5-5)" }] }] });
     useAgents.setState((s) => ({ sessions: { ...s.sessions, t1: { ...s.sessions.t1!, model: "opus" } } }));

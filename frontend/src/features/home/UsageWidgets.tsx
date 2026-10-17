@@ -6,9 +6,10 @@ import { Widget } from "@/components/widgets/Widget";
 import type { WidgetProps } from "@/components/widgets/registry";
 import { ago, baseName, kindLabel, useNow } from "@/features/agents/format";
 import { ProviderLogo } from "@/features/agents/ProviderLogo";
+import { WithTokenBreakdown } from "@/features/agents/TokenBreakdown";
 import { openTask } from "@/features/projects/tasks";
 import { cn } from "@/lib/utils";
-import type { DailyUsage, SessionUsage, UsageStats } from "@/mygo";
+import type { DailyUsage, SessionUsage, TokenTotals, UsageStats } from "@/mygo";
 import { useUI } from "@/stores/ui";
 import { compactNumber, costLabel, sparkSeries, usd } from "./usageFormat";
 import { useUsageStats, type UsageRange, type UsageResult } from "./useUsageStats";
@@ -76,11 +77,11 @@ function Sparkline({ values }: { values: number[] }) {
  * The big figure over its chips, with a graphic beside the figure and a caption beside the chips.
  * The figure never truncates: the graphic narrows and the chips truncate instead.
  */
-function Stat({ value, label, chips, graphic, caption }: { value: string; label: string; chips: ReactNode; graphic?: ReactNode; caption?: ReactNode }) {
+function Stat({ value, label, chips, graphic, caption, breakdown }: { value: string; label: string; chips: ReactNode; graphic?: ReactNode; caption?: ReactNode; /** shown on hover over the figure */ breakdown?: TokenTotals }) {
   return (
     <div className="flex h-full min-h-24 flex-col justify-center gap-2.5 px-1">
       <div className="flex items-end justify-between gap-3">
-        <p aria-label={label} className="shrink-0 whitespace-nowrap font-semibold text-[32px] tabular-nums leading-none tracking-tight">{value}</p>
+        <WithTokenBreakdown totals={breakdown} render={<p aria-label={label} className="shrink-0 whitespace-nowrap font-semibold text-[32px] tabular-nums leading-none tracking-tight" />}>{value}</WithTokenBreakdown>
         {graphic}
       </div>
       <div className="flex min-h-6 items-center justify-between gap-3">
@@ -126,7 +127,7 @@ export function SessionsWidget({ onRemove }: WidgetProps) {
   );
 }
 
-/** Tokens in a range (24h, 7 days, all time), the average per day with usage, and a trend line. */
+/** Tokens (cache reads excluded, like every token headline) in a range (24h, 7 days, all time), the average per day with usage, and a trend line. */
 export function TokensWidget({ config, onConfig, onRemove }: WidgetProps) {
   const range = rangeOf(config);
   const usage = useUsageStats();
@@ -136,8 +137,8 @@ export function TokensWidget({ config, onConfig, onRemove }: WidgetProps) {
       {(stats) => {
         const { tokens, activeDays } = stats[RANGES[range].window];
         return (
-          <Stat value={compactNumber(tokens.total)} label={`${COUNT.format(tokens.total)} tokens, ${RANGES[range].title}`}
-            chips={activeDays > 0 && <Chip>{compactNumber(tokens.total / activeDays)} per active day</Chip>}
+          <Stat value={compactNumber(tokens.work)} label={`${COUNT.format(tokens.work)} tokens excluding cache reads, ${RANGES[range].title}`} breakdown={tokens}
+            chips={activeDays > 0 && <Chip>{compactNumber(tokens.work / activeDays)} per active day</Chip>}
             graphic={<Sparkline values={sparkSeries(stats.daily, range === "all", (d: DailyUsage) => d.tokens)} />} caption={RANGES[range].spark} />
         );
       }}
@@ -175,7 +176,7 @@ export function SpendWidget({ config, onConfig, onRemove }: WidgetProps) {
   );
 }
 
-/** Tokens and spend per harness for a range, as bars relative to the busiest harness. */
+/** Tokens (cache reads excluded) and spend per harness for a range, as bars relative to the busiest harness. */
 export function ByAgentWidget({ config, onConfig, onRemove }: WidgetProps) {
   const range = rangeOf(config);
   const usage = useUsageStats(range);
@@ -184,12 +185,12 @@ export function ByAgentWidget({ config, onConfig, onRemove }: WidgetProps) {
       actions={<RangeMenu range={range} onRange={(next) => onConfig({ range: next })} />}>
       {({ byAgent }) => {
         if (byAgent.length === 0) return <p className="flex h-full min-h-28 items-center justify-center text-center text-muted-foreground text-xs">No agent usage {range === "all" ? "recorded yet" : `in the last ${RANGES[range].label}`}.</p>;
-        const max = Math.max(0, ...byAgent.map((agent) => agent.tokens.total));
+        const max = Math.max(0, ...byAgent.map((agent) => agent.tokens.work));
         return (
           <ul className="-mx-3 -my-1.5 flex flex-col divide-y divide-border/60">
             {byAgent.map((agent) => {
               const accent = ACCENT[agent.kind] ?? "var(--muted-foreground)";
-              const share = max > 0 ? agent.tokens.total / max : 0;
+              const share = max > 0 ? agent.tokens.work / max : 0;
               return (
                 <li key={agent.kind} className="flex items-center gap-3 px-3 py-3.5">
                   <LogoTile kind={agent.kind} />
@@ -198,7 +199,7 @@ export function ByAgentWidget({ config, onConfig, onRemove }: WidgetProps) {
                     <span className="absolute inset-y-0 left-0 rounded-sm border-r-2"
                       style={{ width: `max(2px, ${(share * 100).toFixed(2)}%)`, borderColor: accent, backgroundImage: `radial-gradient(${accent} 0.9px, transparent 1.1px)`, backgroundSize: "3px 3px" }} />
                   </span>
-                  <span className="w-16 shrink-0 text-right text-[13px] tabular-nums">{compactNumber(agent.tokens.total)}</span>
+                  <WithTokenBreakdown totals={agent.tokens} render={<span className="w-16 shrink-0 text-right text-[13px] tabular-nums" />}>{compactNumber(agent.tokens.work)}</WithTokenBreakdown>
                   <Tooltip disabled={!agent.tokens.unpriced.length}>
                     <TooltipTrigger render={<span className="w-20 shrink-0 text-right text-[13px] text-muted-foreground tabular-nums" />}>{costLabel(agent.tokens)}</TooltipTrigger>
                     <TooltipPopup className="max-w-xs">Excludes {agent.tokens.unpriced.join(", ")}</TooltipPopup>
@@ -229,14 +230,14 @@ function SessionRow({ session: s, now }: { session: SessionUsage; now: number })
             {s.failedTools > 0 && <span className="inline-flex shrink-0 items-center gap-1 text-red-400 tabular-nums"><CircleAlert className="size-3" />{COUNT.format(s.failedTools)} failed</span>}
           </span>
         </span>
-        <span className="w-16 shrink-0 text-right text-[13px] tabular-nums">{compactNumber(s.tokens.total)}</span>
+        <WithTokenBreakdown totals={s.tokens} render={<span className="w-16 shrink-0 text-right text-[13px] tabular-nums" />}>{compactNumber(s.tokens.work)}</WithTokenBreakdown>
         <span className="w-14 shrink-0 text-right text-muted-foreground text-xs tabular-nums">{ago(s.updatedAt, now)}</span>
       </button>
     </li>
   );
 }
 
-/** The most recently active sessions with their tool calls, failures and tokens; a row opens the task. */
+/** The most recently active sessions with their tool calls, failures and tokens (cache reads excluded); a row opens the task. */
 export function LatestSessionsWidget({ onRemove }: WidgetProps) {
   const usage = useUsageStats();
   const now = useNow(usage.stats !== null && usage.stats.latest.length > 0);
@@ -253,7 +254,7 @@ export function LatestSessionsWidget({ onRemove }: WidgetProps) {
   );
 }
 
-/** Everything recorded: tokens, spend, sessions and days with usage. */
+/** Everything recorded: tokens (cache reads excluded), spend, sessions and days with usage. */
 export function UsageTotalsWidget({ onRemove }: WidgetProps) {
   const usage = useUsageStats();
   return (
@@ -261,17 +262,19 @@ export function UsageTotalsWidget({ onRemove }: WidgetProps) {
       {({ all }) => (
         <dl className="grid h-full grid-cols-2 content-center gap-x-4 gap-y-3 px-1">
           {([
-            ["Tokens", compactNumber(all.tokens.total)],
+            ["Tokens", compactNumber(all.tokens.work)],
             ["Spend", costLabel(all.tokens)],
             ["Sessions", COUNT.format(all.sessions)],
             ["Active days", COUNT.format(all.activeDays)],
           ] as const).map(([label, value]) => (
             <div key={label} className="flex min-w-0 flex-col gap-0.5">
               <dt className="text-muted-foreground text-xs">{label}</dt>
-              <Tooltip disabled={!(label === "Spend" && all.tokens.unpriced.length)}>
-                <TooltipTrigger render={<dd className="truncate font-semibold text-lg tabular-nums tracking-tight" />}>{value}</TooltipTrigger>
-                <TooltipPopup className="max-w-xs">Excludes {all.tokens.unpriced.join(", ")}</TooltipPopup>
-              </Tooltip>
+              {label === "Tokens"
+                ? <WithTokenBreakdown totals={all.tokens} render={<dd className="truncate font-semibold text-lg tabular-nums tracking-tight" />}>{value}</WithTokenBreakdown>
+                : <Tooltip disabled={!(label === "Spend" && all.tokens.unpriced.length)}>
+                  <TooltipTrigger render={<dd className="truncate font-semibold text-lg tabular-nums tracking-tight" />}>{value}</TooltipTrigger>
+                  <TooltipPopup className="max-w-xs">Excludes {all.tokens.unpriced.join(", ")}</TooltipPopup>
+                </Tooltip>}
             </div>
           ))}
         </dl>
