@@ -38,7 +38,7 @@ Www-Authenticate: Bearer resource_metadata="https://drive.orole.be/.well-known/o
 {"jsonrpc":"2.0","error":{"code":-32000,"message":"missing authorization header"},"id":null}
 ```
 
-Important distinction: Drive's resource metadata advertises four scopes, but its unauthenticated challenge requests only `mcp:read`. The client defaults to the challenge scope, not all advertised scopes. Configured scope overrides are explicit.
+Important distinction: Drive's resource metadata advertises four scopes, but its unauthenticated challenge requests only `mcp:read`. The client defaults to the challenge scope, not all advertised scopes. Configured scope overrides are explicit. The challenge scope is requested whole, never shortened: Apollo's names 71 scopes (about 1.6 KB), and cutting it left a half-written last scope that Apollo rejected as unknown. Only tokens outside the RFC 6749 scope-token characters are dropped.
 
 ## Authorization server discovery
 

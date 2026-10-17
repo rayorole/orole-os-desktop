@@ -9,6 +9,8 @@ notes. See `docs/development/updates.md`.
 ## Unreleased
 
 ### Fixed
+- Signing in to Apollo no longer fails with "unknown scopes". Orole cut the list of permissions a server asks for at 512 characters, so for servers that ask for many (Apollo asks for 71) the last one was sent half-written. The whole list is now requested.
+- Code tasks in the sidebar no longer swap places while they run. Each project lists its tasks pinned first, then newest created first, and a task keeps its row through tool calls, messages and status changes.
 - A bot's message box no longer stays stuck on Stop and "Queue message" after the reply has finished, which blocked sending. The running state is now dropped when it can no longer be trusted (the chat was closed or the connection to the daemon dropped while the reply ended), and Stop checks with the daemon so a wrong state always clears. The daemon also announces the end of a reply before a new one can start, so the box can no longer show a bot as idle in the middle of a reply.
 - Starting a reply while you are dictating no longer leaves the Send button hidden afterwards.
 - The dictation button stays available when the message box already has text. Dictated text is added after what you wrote instead of replacing it.

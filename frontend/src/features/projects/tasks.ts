@@ -17,8 +17,12 @@ export function belongsToProject(session: Session, project: Project): boolean {
   return session.projectId ? session.projectId === project.id : Boolean(project.path) && pathKey(session.project) === pathKey(project.path);
 }
 
-/** Pinned tasks first, then the most recently updated. */
-const newestFirst = (a: Session, b: Session) => Number(!!b.pinned) - Number(!!a.pinned) || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0);
+/**
+ * Pinned tasks first, then newest created. Keyed on `startedAt` (set once at creation) with the id as tie-breaker, never on
+ * `updatedAt`: that moves on every tool call, message, status change and token update, which made running tasks swap places.
+ */
+const newestFirst = (a: Session, b: Session) =>
+  Number(!!b.pinned) - Number(!!a.pinned) || (Date.parse(b.startedAt) || 0) - (Date.parse(a.startedAt) || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 /** Dashboard-visible sessions of one project, newest first. */
 export function projectTasks(sessions: Iterable<Session>, project: Project): Session[] {
