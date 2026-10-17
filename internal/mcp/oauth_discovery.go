@@ -200,7 +200,9 @@ func (network *oauthNetwork) discover(ctx context.Context, hc *http.Client, mcpU
 			challengeURL = c.Params["resource_metadata"]
 		}
 		if d.ChallengeScope == "" {
-			d.ChallengeScope = untrusted.Line(c.Params["scope"], 512)
+			// Never cut this like other display strings: it is sent back verbatim as the
+			// authorization request's scope, and a truncated last token is an unknown scope.
+			d.ChallengeScope = strings.Join(scopeTokens(c.Params["scope"]), " ")
 		}
 		if d.ChallengeError == "" {
 			d.ChallengeError = untrusted.Line(c.Params["error"], 64)
@@ -337,6 +339,19 @@ func (network *oauthNetwork) discover(ctx context.Context, hc *http.Client, mcpU
 		d.RequestedScopes = slices.Clone(d.PRMScopes)
 	}
 	return d, nil
+}
+
+// scopeTokens splits a space-delimited scope value (RFC 6749 §3.3) and keeps only the
+// tokens made of the allowed characters (%x21 / %x23-5B / %x5D-7E), so the untrusted
+// value carries no control or invisible characters into the UI or the authorization URL.
+func scopeTokens(raw string) []string {
+	var out []string
+	for _, tok := range strings.Fields(raw) {
+		if !strings.ContainsFunc(tok, func(r rune) bool { return r < 0x21 || r > 0x7e || r == '"' || r == '\\' }) {
+			out = append(out, tok)
+		}
+	}
+	return out
 }
 
 // asMetadataURLs lists where an issuer's metadata may live. The MCP spec order is

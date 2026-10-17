@@ -8,6 +8,9 @@ notes. See `docs/development/updates.md`.
 
 ## Unreleased
 
+### Fixed
+- Signing in to Apollo no longer fails with "unknown scopes". Orole cut the list of permissions a server asks for at 512 characters, so for servers that ask for many (Apollo asks for 71) the last one was sent half-written. The whole list is now requested.
+
 ## 0.4.2-dev - 2026-10-17
 
 ### Fixed
