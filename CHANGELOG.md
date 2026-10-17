@@ -8,6 +8,9 @@ notes. See `docs/development/updates.md`.
 
 ## Unreleased
 
+### Fixed
+- Disconnecting an integration is instant. Before, pressing Disconnect kept the confirmation window open, blocking the whole page, until the daemon had closed the connection and deleted the credentials. That could take up to 30 seconds when the server was slow to hang up, and then fail. Now the window closes at once and the integration leaves the list; closing the connection and deleting its stored credentials finish in the background, each limited to 10 seconds. If the daemon refuses the disconnect, the integration comes back with an error. If it is disconnected but the cleanup did not finish (for example Windows Credential Manager did not answer), a warning says so.
+
 ## 0.4.3-dev - 2026-10-17
 
 ### Changed

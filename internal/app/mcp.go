@@ -17,10 +17,12 @@ type ApprovalQueue struct {
 }
 
 var (
-	MCPStatus     = mygo.NewEvent[mcp.ServerState]("mcp:status")
-	MCPAuthURL    = mygo.NewEvent[mcp.AuthStart]("mcp:auth-url")
-	MCPAuthDone   = mygo.NewEvent[mcp.AuthDone]("mcp:auth-done")
-	PolicyPending = mygo.NewEvent[ApprovalQueue]("policy:pending")
+	MCPStatus   = mygo.NewEvent[mcp.ServerState]("mcp:status")
+	MCPAuthURL  = mygo.NewEvent[mcp.AuthStart]("mcp:auth-url")
+	MCPAuthDone = mygo.NewEvent[mcp.AuthDone]("mcp:auth-done")
+	// MCPCleanupFailed: a server was removed, but closing its connection or deleting its credentials did not finish.
+	MCPCleanupFailed = mygo.NewEvent[mcp.CleanupFailed]("mcp:cleanup-failed")
+	PolicyPending    = mygo.NewEvent[ApprovalQueue]("policy:pending")
 )
 
 func forwardMCP(event string, data json.RawMessage) {
@@ -43,6 +45,11 @@ func forwardMCP(event string, data json.RawMessage) {
 		var v mcp.AuthDone
 		if json.Unmarshal(data, &v) == nil {
 			MCPAuthDone.Broadcast(v)
+		}
+	case "mcp.cleanup.failed":
+		var v mcp.CleanupFailed
+		if json.Unmarshal(data, &v) == nil {
+			MCPCleanupFailed.Broadcast(v)
 		}
 	case "policy.pending":
 		var v ApprovalQueue

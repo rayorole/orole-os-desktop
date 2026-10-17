@@ -137,6 +137,14 @@ type Catalog struct {
 	Skipped int `json:"skipped,omitempty"`
 }
 
+// CleanupFailed is published as "mcp.cleanup.failed" when the background cleanup after Remove did not
+// finish cleanly: the server is already gone, but a connection or stored credentials may linger.
+type CleanupFailed struct {
+	ServerID string `json:"serverId"`
+	Name     string `json:"name"`
+	Error    string `json:"error"`
+}
+
 // ContentBlock is one part of a tool result. Text is sanitised and size-limited.
 type ContentBlock struct {
 	Type      string `json:"type"` // text | image | audio | resource | resource_link
