@@ -1505,6 +1505,11 @@ export interface KindPref {
   inApp: boolean;
   /** Sound plays the kind's cue when one arrives. */
   sound: boolean;
+  /**
+   * Push also sends the kind's notifications to ntfy while push is switched on (see Ntfy).
+   * Off by default and independent of InApp. Preferences saved before it existed decode to off.
+   */
+  push: boolean;
 }
 
 /** KnowledgeAdd attaches a committed upload as knowledge. */
@@ -1994,6 +1999,33 @@ export interface NotificationsNotification {
   read: boolean;
   /** NeedsYou is true while the approval this reports is still waiting. */
   needsYou: boolean;
+}
+
+/** NtfyTestResult is what the Send test button reports: success, or why the push failed. */
+export interface NtfyTestResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** NtfyUpdate replaces the master switch and server, and optionally the secrets. */
+export interface NtfyUpdate {
+  enabled: boolean;
+  server: string;
+  /** Token nil keeps the stored token, "" removes it, anything else replaces it. */
+  token: string | null;
+  /** RegenerateTopic discards the topic for a new random one. */
+  regenerateTopic: boolean;
+}
+
+/**
+ * NtfyView is the configuration as the settings page shows it. The token never leaves the
+ * credential store; TokenSet says whether one exists.
+ */
+export interface NtfyView {
+  enabled: boolean;
+  server: string;
+  topic: string;
+  tokenSet: boolean;
 }
 
 export interface Page {
@@ -2588,6 +2620,11 @@ export interface Result {
   stored: boolean;
   /** Sound applies only to this newly created notification, never history. */
   sound: boolean;
+  /**
+   * Push is true when the kind's Push toggle is on and the notification is new, even when
+   * the kind is hidden in app. The caller sends it to ntfy.
+   */
+  push: boolean;
 }
 
 /** Review is a pull request review. */
@@ -3992,8 +4029,19 @@ export const Notifications = {
   markRead(ids: string[], all: boolean): Promise<number> {
     return call("Notifications.MarkRead", ids, all);
   },
+  /**
+   * Ntfy returns the push configuration: server, master switch, topic and whether a token is set.
+   * The token itself is never returned.
+   */
+  ntfy(): Promise<NtfyView> {
+    return call("Notifications.Ntfy");
+  },
   prefs(): Promise<Prefs> {
     return call("Notifications.Prefs");
+  },
+  /** SetNtfy saves the push configuration. Switching push on creates the topic when there is none. */
+  setNtfy(update: NtfyUpdate): Promise<NtfyView> {
+    return call("Notifications.SetNtfy", update);
   },
   setPrefs(prefs: Prefs): Promise<Prefs> {
     return call("Notifications.SetPrefs", prefs);
@@ -4001,6 +4049,10 @@ export const Notifications = {
   /** Test creates a real notification through the daemon's saved preferences. */
   test(): Promise<Result> {
     return call("Notifications.Test");
+  },
+  /** TestNtfy sends one sample push with the saved configuration and reports the outcome. */
+  testNtfy(): Promise<NtfyTestResult> {
+    return call("Notifications.TestNtfy");
   },
 } as const;
 

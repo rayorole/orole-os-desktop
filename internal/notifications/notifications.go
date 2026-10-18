@@ -113,6 +113,9 @@ type KindPref struct {
 	InApp bool `json:"inApp"`
 	// Sound plays the kind's cue when one arrives.
 	Sound bool `json:"sound"`
+	// Push also sends the kind's notifications to ntfy while push is switched on (see Ntfy).
+	// Off by default and independent of InApp. Preferences saved before it existed decode to off.
+	Push bool `json:"push"`
 }
 
 // Prefs are per-kind preferences. Missing kinds use defaults.
@@ -120,7 +123,7 @@ type Prefs struct {
 	Kinds map[Kind]KindPref `json:"kinds"`
 }
 
-// DefaultPrefs: every kind shown and audible.
+// DefaultPrefs: every kind shown and audible, none pushed.
 func DefaultPrefs() Prefs {
 	p := Prefs{Kinds: map[Kind]KindPref{}}
 	for _, k := range Kinds {
@@ -241,6 +244,9 @@ type Result struct {
 	Stored bool `json:"stored"`
 	// Sound applies only to this newly created notification, never history.
 	Sound bool `json:"sound"`
+	// Push is true when the kind's Push toggle is on and the notification is new, even when
+	// the kind is hidden in app. The caller sends it to ntfy.
+	Push bool `json:"push"`
 }
 
 // Notify validates, applies the kind's preference, and persists.
@@ -257,7 +263,7 @@ func (s *Store) Notify(ctx context.Context, in Input) (Result, error) {
 	needsYou := in.Kind == Approval
 	n := Notification{ID: uuid.NewString(), At: time.Now().Unix(), Source: in.Source, Kind: in.Kind, Title: in.Title, Body: in.Body, Level: in.Level, Target: in.Target, NeedsYou: needsYou}
 	if !pref.InApp {
-		return Result{Notification: n}, nil
+		return Result{Notification: n, Push: pref.Push}, nil
 	}
 	// One open approval per ref: a producer that re-reports the same wait (a restart, a
 	// repeated status) does not stack duplicates.
@@ -271,7 +277,7 @@ func (s *Store) Notify(ctx context.Context, in Input) (Result, error) {
 		return Result{Notification: n}, nil
 	}
 	s.prune(ctx)
-	return Result{Notification: n, Stored: true, Sound: pref.Sound}, nil
+	return Result{Notification: n, Stored: true, Sound: pref.Sound, Push: pref.Push}, nil
 }
 
 // Resolve ends the open approvals with ref: the wait they reported is over.

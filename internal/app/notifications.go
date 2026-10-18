@@ -72,3 +72,25 @@ func (s Notifications) Test(ctx context.Context) (notifications.Result, error) {
 	err := s.L.call(ctx, "notifications.test", nil, &out)
 	return out, err
 }
+
+// Ntfy returns the push configuration: server, master switch, topic and whether a token is set.
+// The token itself is never returned.
+func (s Notifications) Ntfy(ctx context.Context) (notifications.NtfyView, error) {
+	var out notifications.NtfyView
+	err := s.L.call(ctx, "notifications.ntfy.get", nil, &out)
+	return out, err
+}
+
+// SetNtfy saves the push configuration. Switching push on creates the topic when there is none.
+func (s Notifications) SetNtfy(ctx context.Context, update notifications.NtfyUpdate) (notifications.NtfyView, error) {
+	var out notifications.NtfyView
+	err := s.L.call(ctx, "notifications.ntfy.set", update, &out)
+	return out, err
+}
+
+// TestNtfy sends one sample push with the saved configuration and reports the outcome.
+func (s Notifications) TestNtfy(ctx context.Context) (notifications.NtfyTestResult, error) {
+	var out notifications.NtfyTestResult
+	err := s.L.call(ctx, "notifications.ntfy.test", nil, &out)
+	return out, err
+}

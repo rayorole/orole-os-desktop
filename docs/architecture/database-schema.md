@@ -38,6 +38,7 @@ prefixes (0010, 0020, ...) so concurrent work does not collide; `DB.Version()` i
 | `messages.finished_at` | 0107 | Unix ms when a chat message reached a final status (`complete \| incomplete \| error \| canceled`), set once; 0 while pending/running and for messages finished before 0107 (the UI's "Thought for" duration) |
 | `messages.call_id` + partial index `idx_messages_call(call_id, seq) WHERE call_id <> ''` | 0110 | the Jarvis call a spoken turn belongs to; `''` for every other message (and calls before 0110). Such messages are in the bot's model history and memory but excluded from chat paging, previews and chat events; `jarvis.calls.transcript` reads them by call id |
 | `mcp_servers.token_header` | 0113 | header that carries a `bearer` server's static token: `''` sends `Authorization: Bearer <token>`, a name such as `api-key` (Similarweb) sends `<name>: <token>` instead; set when the server is added. The token stays in Credential Manager |
+| `settings` key `notifications.ntfy` (`{"enabled", "server"}`), seeded off | 0114 | ntfy push master switch and server URL. The per-kind Push toggle is the `push` field of `notifications.prefs` (missing = off). The topic and access token are in Credential Manager, never here |
 
 Tables for agents, MCP, policy and notifications exist ahead of the daemon services that use them; see
 `daemon.md` for what is actually registered.

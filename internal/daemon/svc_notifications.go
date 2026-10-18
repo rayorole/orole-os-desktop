@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 
+	"github.com/rayorole/orole-os-desktop/internal/credentials"
 	"github.com/rayorole/orole-os-desktop/internal/ipc"
 	"github.com/rayorole/orole-os-desktop/internal/notifications"
 )
+
+// ntfyCredentialStore keeps the ntfy topic and access token; tests replace it with memory.
+var ntfyCredentialStore = credentials.New
 
 // NotificationEvent is published on "notifications.changed".
 type NotificationEvent struct {
@@ -41,8 +45,15 @@ func (d *Daemon) Notify(in notifications.Input) (notifications.Notification, err
 func (d *Daemon) notifyResult(ctx context.Context, in notifications.Input) (notifications.Result, error) {
 	st := notifications.New(d.DB.DB)
 	res, err := st.Notify(ctx, in)
-	if err != nil || !res.Stored {
+	if err != nil {
 		return res, err
+	}
+	// Push is independent of the in-app toggle and runs in the background: it never delays or fails the notification.
+	if res.Push && d.Ntfy != nil {
+		d.Ntfy.Push(res.Notification)
+	}
+	if !res.Stored {
+		return res, nil
 	}
 	c, _ := st.Counts(ctx)
 	n := res.Notification
@@ -76,6 +87,7 @@ func mapNotifErr(err error) error {
 
 func (d *Daemon) registerNotifications() {
 	st := notifications.New(d.DB.DB)
+	d.Ntfy = notifications.NewNtfy(d.DB.DB, ntfyCredentialStore(), d.Log)
 
 	handle(d, "notifications.list", func(ctx context.Context, p notifications.ListOptions) (NotificationList, error) {
 		items, err := st.List(ctx, p)
@@ -116,5 +128,19 @@ func (d *Daemon) registerNotifications() {
 		}
 		d.IPC.Publish("settings.changed", map[string]any{"key": notifications.PrefsKey, "value": stored})
 		return stored, nil
+	})
+	handle(d, "notifications.ntfy.get", func(ctx context.Context, _ none) (notifications.NtfyView, error) {
+		return d.Ntfy.Config(ctx)
+	})
+	handle(d, "notifications.ntfy.set", func(ctx context.Context, p notifications.NtfyUpdate) (notifications.NtfyView, error) {
+		v, err := d.Ntfy.Update(ctx, p)
+		return v, mapNotifErr(err)
+	})
+	handle(d, "notifications.ntfy.test", func(ctx context.Context, _ none) (notifications.NtfyTestResult, error) {
+		if err := d.Ntfy.SendTest(ctx); err != nil {
+			d.Log.Warn("test push not sent", "err", err)
+			return notifications.NtfyTestResult{Error: err.Error()}, nil
+		}
+		return notifications.NtfyTestResult{OK: true}, nil
 	})
 }

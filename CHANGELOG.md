@@ -8,6 +8,9 @@ notes. See `docs/development/updates.md`.
 
 ## Unreleased
 
+### Added
+- Push notifications through ntfy. In Settings > Alerts, each kind (Needs you, Failed, Finished, Bot replies, Flow messages) has a Push toggle next to In app and Sound, off by default. Below the table you switch push on, choose the server (default ntfy.sh, or your own), copy or regenerate the topic, optionally add an access token and press Send test. The topic works like a password on a public server, and on ntfy.sh messages pass through their server and are cached for about 12 hours. The topic and token are kept in Windows Credential Manager.
+
 ### Changed
 - Every bot can now ask you a question as a card in the chat (a question with 2 to 6 suggested answers you can pick or answer in your own words), not only a new bot in its setup interview. Bots ask one question at a time and put the answer they recommend first. It is not offered during phone calls, to bots another bot handed work to, or in the bot builder preview, because nobody can answer a card there. Coding agents (Claude, Codex, omp) keep their own question tool.
 
