@@ -575,10 +575,11 @@ just another seed. `Bot.color` is no longer used by the UI (the field is carried
 New bot (`builder/NewBot`) asks for a name and a model only and creates the bot with `config.setup = true`; it
 then opens the conversation. The daemon makes the bot speak first: `Manager.SaveBot` stores a hidden user message
 (a text part with `hidden: true`, read by the model, never drawn or indexed) and runs a turn on it. While `setup`
-is set the bot gets two tools (`internal/chat/tools/setup.go`) and a setup section in its system prompt that lists
-the user's other bots (fenced data) so it proposes roles nobody fills yet: `ask_user` (a question with 2-6
-suggested answers, each a label plus optional description, stored as a `question` part) and `save_profile`
-(writes its own description and instructions and clears `setup`). The `question` part renders as
+is set the bot also gets `save_profile` (`internal/chat/tools/setup.go`; writes its own description and instructions
+and clears `setup`) and a setup section in its system prompt that lists the user's other bots (fenced data) so it
+proposes roles nobody fills yet. It interviews the user with `ask_user`, which is not a setup tool: every bot has it
+(`internal/chat/tools/ask.go`; a question with 2-6 suggested answers, each a label plus optional description, stored as
+a `question` part). The `question` part renders as
 `parts/QuestionCard`: lettered suggestions plus a free-text field, either of which is sent as the user's next
 message; it is read-only once the conversation moves on. The rail shows an orange dot on the avatar while the
 last message is an unanswered question (`MessagePreview.awaiting`) and a pulsing blue one while a reply runs;

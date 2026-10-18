@@ -66,6 +66,10 @@ func (d *Daemon) registerChatTools() {
 	m.AddPromptSection(tools.ComputerPrompt)
 	list = append(list, tools.Show{})
 	m.AddPromptSection(func(chat.Bot) string { return tools.ShowPrompt })
+	// ask_user: every bot with a tool-calling model has it (the engine withholds it from runs nobody can answer).
+	// Its section comes before the setup one, which builds on it.
+	list = append(list, tools.AskUser{})
+	m.AddToolSection(chat.ToolAskUser, func(chat.Bot) string { return tools.AskUserPrompt })
 	list = append(list, &tools.Setup{Bots: m})
 	m.AddPromptSection(func(b chat.Bot) string {
 		if !b.Config.Setup {

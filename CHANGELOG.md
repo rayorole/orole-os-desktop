@@ -8,6 +8,9 @@ notes. See `docs/development/updates.md`.
 
 ## Unreleased
 
+### Changed
+- Every bot can now ask you a question as a card in the chat (a question with 2 to 6 suggested answers you can pick or answer in your own words), not only a new bot in its setup interview. Bots ask one question at a time and put the answer they recommend first. It is not offered during phone calls, to bots another bot handed work to, or in the bot builder preview, because nobody can answer a card there. Coding agents (Claude, Codex, omp) keep their own question tool.
+
 ## 0.4.3-dev - 2026-10-17
 
 ### Changed
