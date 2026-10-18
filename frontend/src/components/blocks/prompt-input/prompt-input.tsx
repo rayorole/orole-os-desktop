@@ -3,7 +3,7 @@
  * registry item https://hextaui.com/r/pro/prompt-input.json. Used under the HextaUI Pro License
  * (https://hextaui.com/legal/license). See docs/research/upstream-attribution.md for what changed.
  */
-import { useImperativeHandle, useRef, useState, useSyncExternalStore, type ComponentProps, type ReactNode } from "react";
+import { useImperativeHandle, useRef, useSyncExternalStore, type ComponentProps, type ReactNode } from "react";
 import { ArrowUpIcon, PaperclipIcon, PlusIcon } from "lucide-react";
 import { composerFrame } from "@/components/assistant-ui/elements/surfaces";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,8 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { PromptInputContext, prefersReducedMotion, usePromptInput, type PromptInputContextValue } from "./context";
+import { pastedFiles } from "@/lib/attachmentFiles";
+import { useFileDrop } from "@/lib/useFileDrop";
 
 function subscribeCoarse(callback: () => void) {
   if (typeof window.matchMedia !== "function") return () => {};
@@ -27,8 +29,6 @@ function shake(element: HTMLElement | null) {
   element.setAttribute("data-shake", "");
   setTimeout(() => element.removeAttribute("data-shake"), 400);
 }
-
-const hasFiles = (event: React.DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes("Files");
 
 type PromptInputProps = Omit<ComponentProps<"form">, "onSubmit"> & {
   value: string;
@@ -52,13 +52,14 @@ export function PromptInput({ value, onValueChange, onSubmit, canSubmit, disable
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  const dragDepth = useRef(0);
-  const [dragging, setDragging] = useState(false);
   const acceptsFiles = Boolean(onFiles) && filesEnabled && !disabled;
   const addFiles = onFiles && ((files: File[]) => { if (files.length && acceptsFiles) onFiles(files); });
+  // Pasted files go to the caller even when the composer is full or busy-but-enabled, so it can say why they were refused.
+  const receiveFiles = onFiles && !disabled ? (files: File[]) => { if (files.length) onFiles(files); } : undefined;
+  const { dragging, handlers: dropHandlers } = useFileDrop({ enabled: Boolean(onFiles), accepting: acceptsFiles, onFiles: (files) => onFiles?.(files), afterDrop: () => textareaRef.current?.focus() });
 
   const context: PromptInputContextValue = {
-    value, setValue: onValueChange, textareaRef, disabled, canSubmit, dragging, addFiles: acceptsFiles ? addFiles : undefined,
+    value, setValue: onValueChange, textareaRef, disabled, canSubmit, dragging, addFiles: acceptsFiles ? addFiles : undefined, receiveFiles,
     openFileDialog: () => inputRef.current?.click(),
   };
 
@@ -71,10 +72,7 @@ export function PromptInput({ value, onValueChange, onSubmit, canSubmit, disable
     <form ref={formRef} data-slot="prompt-input"
       className={cn("relative flex min-w-0 flex-col gap-2 [--composer-radius:1.25rem] [--composer-radius-outer:calc(var(--composer-radius)+--spacing(1.5))]", className)}
       onSubmit={(event) => { event.preventDefault(); submit(); }}
-      onDragEnter={(event) => { if (!hasFiles(event) || !onFiles) return; dragDepth.current++; setDragging(true); }}
-      onDragOver={(event) => { if (!hasFiles(event) || !onFiles) return; event.preventDefault(); event.dataTransfer.dropEffect = acceptsFiles ? "copy" : "none"; }}
-      onDragLeave={(event) => { if (!hasFiles(event)) return; dragDepth.current = Math.max(0, dragDepth.current - 1); if (dragDepth.current === 0) setDragging(false); }}
-      onDrop={(event) => { if (!hasFiles(event) || !onFiles) return; event.preventDefault(); dragDepth.current = 0; setDragging(false); addFiles?.(Array.from(event.dataTransfer.files)); textareaRef.current?.focus(); }}
+      {...dropHandlers}
       {...props}>
       {children}
       {onFiles && <input ref={inputRef} type="file" multiple hidden tabIndex={-1} aria-label={fileInputLabel} disabled={!acceptsFiles}
@@ -137,11 +135,12 @@ export function PromptInputTextarea({ ref, className, onKeyDown, onPaste, ...pro
     }}
     onPaste={(event) => {
       onPaste?.(event);
-      if (event.defaultPrevented || !context.addFiles) return;
-      const files = Array.from(event.clipboardData.files);
+      if (event.defaultPrevented || !context.receiveFiles) return;
+      // A text paste is left to the browser; only a paste that is files and no text is taken over.
+      const files = pastedFiles(event.clipboardData);
       if (!files.length) return;
-      if (!event.clipboardData.getData("text/plain")) event.preventDefault();
-      context.addFiles(files);
+      event.preventDefault();
+      context.receiveFiles(files);
     }}
     {...props} />;
 }

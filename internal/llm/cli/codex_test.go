@@ -151,7 +151,7 @@ func TestToolHistoryIsRenderedForTheModel(t *testing.T) {
 		{Role: llm.RoleUser, Parts: []llm.Part{{Kind: llm.PartText, Text: "hi"}}},
 		{Role: llm.RoleAssistant, Parts: []llm.Part{{Kind: llm.PartToolCall, ToolName: "web_search", Args: []byte(`{ "q": "x" }`)}}},
 		{Role: llm.RoleTool, Parts: []llm.Part{{Kind: llm.PartToolResult, ToolName: "web_search", Text: "result text"}}},
-	}})
+	}}, media{})
 	for _, want := range []string{"[assistant called the tool web_search with {\"q\":\"x\"}]", "[tool result of web_search]\nresult text"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("prompt lacks %q:\n%s", want, got)

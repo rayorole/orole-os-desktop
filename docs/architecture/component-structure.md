@@ -180,12 +180,16 @@ compatible model restores it. Missing catalogs are explicit, not fabricated.
 Start or Enter hands the task to the pending task page, which calls `Agents.start` behind it (see Task view); Shift+Enter still inserts a newline.
 Duplicate submissions are blocked and uncertain retries reuse their request key.
 
-Files can be selected, dropped or pasted. `useTaskAttachments` uploads through
-`Agents.uploadAttachment`, shows real pending/error/ready state, and prevents launch
-while an attachment is incomplete. Removing a pending chip discards any upload that
-finishes later. A failed start preserves both draft and attachments. Limits are
-8 files per task and 2 MiB per file, enforced again by the daemon within the 4 MiB IPC
-frame budget. Attachment-only tasks are allowed.
+Files can be selected, dropped or pasted, in this composer and in the follow-up composer of a running task
+(`tasks/Composer.tsx`), which share `useTaskAttachments` and `lib/useFileDrop.ts`; the bot chat uses its own adapter
+but the same `lib/attachmentFiles.ts` rules. A paste is taken over only when the clipboard carries files and no text, so a
+text paste (also one that comes with a picture of the copied cells) is unchanged. `useTaskAttachments` uploads through
+`Agents.uploadAttachment` under a portable file name, shows real pending/error/ready state (an image shows a thumbnail),
+and prevents launch while an attachment is incomplete. A file over the limit, or an empty one, becomes an error chip that
+says why; files past the eighth are left out with a message; pasting or dropping when files cannot be attached says why.
+Removing a pending chip discards any upload that finishes later. A failed start preserves both draft and attachments.
+Limits are 8 files per task and 2 MiB per file, any file type, enforced again by the daemon within the 4 MiB IPC frame
+budget. Attachment-only tasks are allowed.
 
 The daemon stages opaque IDs under `OROLE_HOME/attachment-uploads`; abandoned staging
 expires after 24 hours. At launch it copies files into an exclusive

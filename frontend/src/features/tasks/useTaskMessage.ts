@@ -4,7 +4,7 @@ import { inDesktop } from "@/lib/backend";
 import { useAgents } from "@/stores/agents";
 import { errText } from "@/features/agents/format";
 import { useHarnessOptions } from "@/features/agents/useHarnessOptions";
-import { useTaskAttachments, type TaskAttachment } from "@/features/home/useTaskAttachments";
+import { MAX_FILES, useTaskAttachments, type TaskAttachment } from "@/features/home/useTaskAttachments";
 import { composerState } from "./composerState";
 
 export interface TaskMessageAttachments {
@@ -48,7 +48,11 @@ export function useTaskMessage(session: Session): TaskMessage {
   const state = composerState(session);
   const connected = inDesktop && !source.offline;
   const capabilities = session.followup;
-  const attachments = useTaskAttachments(connected && state.canSend && !!capabilities?.attachments && !busy);
+  const cannotAttach = !connected ? "Connect to the desktop daemon to attach files."
+    : !state.canSend ? state.reason
+    : !capabilities?.attachments ? capabilities?.reason || "Attachments are unavailable for this conversation."
+    : "";
+  const attachments = useTaskAttachments(!cannotAttach && !busy, [], cannotAttach);
   const models = harness?.models ?? [];
   const model = capabilities?.model ? selection?.model ?? session.model : session.model;
   const reasoning = capabilities?.reasoning ? selection?.reasoning ?? session.reasoning ?? "" : session.reasoning ?? "";
@@ -61,10 +65,7 @@ export function useTaskMessage(session: Session): TaskMessage {
   const canChooseModel = !busy && !controlsBlocked && !!capabilities?.model && models.length > 0;
   const canChooseReasoning = !busy && !controlsBlocked && !!capabilities?.reasoning && levels.length > 0;
   const settingsReason = controlsBlocked || ((!capabilities?.model || !capabilities?.reasoning) ? capabilities?.reason || "This conversation does not support changing these settings." : "");
-  const attachmentReason = !connected ? "Connect to the desktop daemon to attach files."
-    : !state.canSend ? state.reason
-    : !capabilities?.attachments ? capabilities?.reason || "Attachments are unavailable for this conversation."
-    : attachments.files.length >= 8 ? "Attach up to 8 files per message." : "";
+  const attachmentReason = cannotAttach || (attachments.files.length >= MAX_FILES ? `Attach up to ${MAX_FILES} files per message.` : "");
 
   function modelBlockedReason(option: ModelOption) {
     if (option.id === session.model) return "";
