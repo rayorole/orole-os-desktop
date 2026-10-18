@@ -139,3 +139,11 @@ The budget exists to be ratcheted down. When a change shrinks the chunk, run
 `bun scripts/check-bundle-size.mjs --ratchet` and commit the updated JSON in the same
 PR; it sets the budget to the measured size plus 2% rounded up to a KiB and never raises it. CI prints a notice when
 the chunk is more than 5% under budget. Raising the budget is a hand edit of the JSON and needs a reason in the PR.
+
+## Background scene thumbnails
+
+The Background picker (Settings > Customization) shows `frontend/src/components/ascii/previews/<scene>.png`, 100 x 50 px
+stills drawn from each scene's frame at t = 0 by `bun scripts/gen-scene-previews.mjs`. Run it after adding or changing
+a scene in `components/ascii/scenes.ts` and commit the PNGs; `--check` (CI, `web` job) fails when a scene has no
+thumbnail. Opening Settings must not run any scene code: `SceneGrid.test.tsx` fails if the picker calls a scene loader
+or `mount`.

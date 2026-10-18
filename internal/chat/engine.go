@@ -75,6 +75,19 @@ func (m *Manager) buildToolset(bot Bot, caps llm.Caps, draft bool) toolset {
 	return ts
 }
 
+// drop removes a tool the run must not offer.
+func (ts *toolset) drop(name string) {
+	delete(ts.route, name)
+	ts.specs = slices.DeleteFunc(ts.specs, func(sp llm.ToolSpec) bool { return sp.Hosted == "" && sp.Name == name })
+}
+
+// userCanAnswer reports whether the run ends in a chat message the user can reply to: a question card needs
+// that. Builder previews, delegated ask_bot runs ("you cannot ask follow-up questions") and phone-call turns
+// (spoken, or written into the call's thread) have no such reply.
+func (p prep) userCanAnswer() bool {
+	return !p.draft && !p.voice && p.rc.Depth == 0 && p.rc.CallThread == ""
+}
+
 // runTurn answers one stored user message: it creates (or resets) the assistant message, runs the
 // engine and stores the terminal state. It never returns an error; failures end up on the message.
 // A delegated turn (t.result set) also reports its outcome to the asking bot, whatever happens.
@@ -250,8 +263,12 @@ func (m *Manager) prepare(ctx context.Context, p prep) (*turnEnv, error) {
 		}
 	}
 
+	ts := m.buildToolset(p.bot, mdl.Caps, p.draft)
+	if !p.userCanAnswer() {
+		ts.drop(ToolAskUser)
+	}
 	fromUser := p.rc.Author == "user" && !p.draft && p.bot.ID != ""
-	in := systemInput{Bot: p.bot, Sections: m.promptSections(p.bot, fromUser), Snapshot: snapshot, Recall: recall, Extra: p.extra, Voice: p.voice, Language: p.language}
+	in := systemInput{Bot: p.bot, Sections: m.promptSections(p.bot, fromUser, ts), Snapshot: snapshot, Recall: recall, Extra: p.extra, Voice: p.voice, Language: p.language}
 	cur := llm.Message{Role: llm.RoleUser, Parts: userParts(p.text, atts)}
 	history := p.history
 	if p.userSeq > 0 {
@@ -278,7 +295,7 @@ func (m *Manager) prepare(ctx context.Context, p prep) (*turnEnv, error) {
 	}
 	env := &turnEnv{
 		bot: p.bot, rc: p.rc, provider: prov, modelID: mdl.ID, system: buildSystem(in), history: history,
-		tools: m.buildToolset(p.bot, mdl.Caps, p.draft), sink: p.sink,
+		tools: ts, sink: p.sink,
 	}
 	if p.bot.Reasoning != "" && slices.Contains(mdl.Reasoning, p.bot.Reasoning) {
 		env.reasoning = p.bot.Reasoning

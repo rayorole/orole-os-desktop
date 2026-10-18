@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { load, mount } from "ascii.rest";
+import { mount } from "ascii.rest";
 import { useSettings } from "@/stores/settings";
 import { useUI } from "@/stores/ui";
 import { customBackgroundPiece } from "./custom-background";
+import { loadScene } from "./scene-loader";
 
 export function useMedia(q: string) {
   const [m, setM] = useState(() => matchMedia(q).matches);
@@ -97,9 +98,9 @@ export function AsciiBand({ position = 0.42, fade = 0.45 }: { position?: number;
     }
     let stop: (() => void) | undefined;
     let live = true;
-    const loader = (load as Record<string, () => Promise<Parameters<typeof mount>[1]>>)[scene];
-    if (!loader) return;
-    loader().then((piece) => {
+    const loading = loadScene(scene);
+    if (!loading) return;
+    loading.then((piece) => {
       if (live) stop = mount(el, piece, { fps: m.fps, motion: true });
     });
     return () => {

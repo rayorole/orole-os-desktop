@@ -139,9 +139,17 @@ Bots with Jarvis mode on can speak on the phone (`docs/architecture/jarvis.md`).
 - Hosted: OpenRouter `openrouter:web_search` / `web_fetch` / `datetime`, OpenAI `web_search`. A tool is offered only
   when the provider+model can run it; `chat.tools.list` returns `available` plus a reason and what leaves the machine.
 - Client: `fetch_url` (fallback), `research`, MCP tools, `orole_get_skill`, memory tools, `ask_bot`, automation tools,
-  and for bots with a computer `computer_run`, `computer_read_file`, `computer_write_file`, `browser_open`,
+  `ask_user` and, for bots with a computer, `computer_run`, `computer_read_file`, `computer_write_file`, `browser_open`,
   `browser_click`, `browser_type`, `browser_read`, `browser_screenshot` and `ask_user_to_take_over`
   (see [bot-computer.md](bot-computer.md)).
+- `ask_user` (`internal/chat/tools/ask.go`) is built in for every bot whose model can call tools: no `BotConfig` flag and
+  no setting. It shows one question card (`question` part: 2-6 suggested answers, each a label plus an optional
+  description) and the turn ends; the user's pick or typed text arrives as the next message. The engine refuses a second
+  `ask_user` in the same step. Its prompt section (`AskUserPrompt`, registered with `Manager.AddToolSection`, so only runs
+  that are offered the tool get it) says to ask one question at a time and to put the recommended answer first. It is
+  withheld (`prep.userCanAnswer`) from runs the user cannot answer: phone-call turns and call-thread follow-ups (spoken,
+  or written into the call's thread, which has no card), delegated `ask_bot` runs ("you cannot ask follow-up questions")
+  and builder previews. Code-task harnesses (Claude, Codex, omp) keep their own native question tool.
 - Tool images: a tool may return `ToolResult.Images` (PNG/JPEG/GIF/WebP, at most `MaxToolImageBytes` each,
   `MaxToolImages` per step). A vision model gets them in a transient user message after the tool results, for the
   latest step only; they are never stored.

@@ -59,6 +59,9 @@ jobs:
       # Fails when the entry chunk grows past scripts/bundle-budget.json; see docs/development/testing.md.
       - name: Entry chunk is within its size budget
         run: bun scripts/check-bundle-size.mjs
+      # Every scene in components/ascii/scenes.ts needs its picker thumbnail (bun scripts/gen-scene-previews.mjs).
+      - name: Every scene has a thumbnail
+        run: bun scripts/gen-scene-previews.mjs --check
 
   # Daemon, CLI and the packaged app with its NSIS installer. Independent of the test jobs, so the
   # slowest step (mygo build) overlaps them instead of following them.
