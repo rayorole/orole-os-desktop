@@ -1,8 +1,10 @@
 # ascii.rest library
 
 Original source review: `C:/code/projects/_upstream/ascii` (HEAD `bfd6ad8cebc2486be75cc26b4d0fe5065d5c15c9`).
-Orole now pins npm package `ascii.rest` 0.2.1 (`frontend/package.json`) for Tokyo rain and Lantern lake.
-Licence: MIT, Copyright (c) 2026 bas3line. Dependency, not copied code; the MIT notice ships with the package.
+Orole pins npm package `ascii.rest` 0.2.1 (`frontend/package.json`); 0.4.0 is the latest release.
+Licence: MIT, Copyright (c) 2026 bas3line, for the whole repository including every piece
+(https://github.com/bas3line/ascii/blob/main/LICENSE; the site's docs say it "can be used and changed in any project, free or paid"). The package is a dependency and its
+MIT notice ships with it; 15 newer scenes are copied into the repository (see Catalogue and `upstream-attribution.md`).
 
 ## Piece contract (`src/types.ts`)
 
@@ -31,10 +33,21 @@ first frame is kept unless `motion: true` is passed** (the option exists for pag
 
 - `AsciiBand`: one `<canvas>` per window across the top of Home, cropped like `object-fit: cover` (scenes are 2:1),
   faded at the foot with a CSS mask; never one canvas per widget (`AGENTS.md`).
-- Scene loaded lazily by name through `load[scene]()` from `ascii.rest`; the picker lists 13 scenes in `SCENES`
-  (night-coast, aurora-fjord, alpine-dawn, deep-reef, desert-night, earthrise, kyoto-dusk, marine-drive,
-  misty-forest, ocean-sunset, storm-plains, tokyo-rain, lantern-lake). All participate in random startup
-  selection. taj-dawn and varanasi-ghats exist upstream but are not offered.
+- `scenes.ts` is the list of 30 scenes (`SCENES`, pure data: Settings and the startup selection import it). Scenes load
+  lazily by id through `scene-loader.ts#loadScene`: 15 scenes that are newer than the latest npm release
+  (0.4.0 has none of them) are vendored in `components/ascii/pieces/` (MIT, `pieces/LICENSE`, see
+  `upstream-attribution.md`) and imported per file (one chunk each); every other scene comes from `load[scene]()` of
+  the `ascii.rest` package. One in-flight promise per scene is kept; a failed import is retried on the next request.
+  The vendored scenes are volcano-night, snow-train, saturn-rise, salt-flat, prism-city, night-highway, lake-pichola,
+  kite-festival, jungle-falls, jal-mahal, gangaur-ghat, edge-orbit, cloud-sea, command-city and amer-fort. All 30
+  participate in random startup selection. No scene is fetched from ascii.rest at runtime.
+- Settings > Customization > Background (`SceneGrid.tsx`): None plus the 30 scenes in a listbox with one tab stop,
+  arrow keys/Home/End to move and Enter or Space to choose. Tiles show `previews/<scene>.png` (100 x 50, drawn at build
+  time by `scripts/gen-scene-previews.mjs`, shown pixelated through `<img loading="lazy">`), so opening Settings runs
+  no scene code and draws no canvas. The list is virtualised by row (`@tanstack/react-virtual`), keeping the row that
+  holds the focus target mounted. None is `ascii.enabled = false` (the same as the Show background switch; the saved
+  scene is kept); choosing a scene sets `ascii.scene` and turns the background on. The full scene is loaded only by
+  the band, only for the scene in use.
 - Orole passes `motion: true` always and applies its **own** policy first, `decideMotion`: disabled, static-only,
   paused, reduced-motion (Settings > Accessibility or the OS preference), pause when unfocused, intensity (scales
   fps, 1..30), low-power (<= 2 cores or discharging < 20%: capped at 6 fps). When the policy says do not animate
@@ -45,7 +58,7 @@ first frame is kept unless `motion: true` is passed** (the option exists for pag
   through the existing daemon-backed settings API (about 80 KB, below its 256 KiB per-value limit).
   The original file and its path are not retained. Browser preview uses the existing local settings storage.
 - `custom-background.ts` converts those samples into a 64-colour, ordered-dithered dot piece, mounted through
-  the same `ascii.rest` renderer as the built-in scenes. The picker previews the converted result.
+  the same `ascii.rest` renderer as the built-in scenes. The picker shows the upload's converted result above the grid.
   Uploads are still images, share Home's crop/fade, opacity and intensity, and disable startup randomization.
   Replace image swaps the upload; Remove image returns to the saved built-in scene. Selecting a built-in
   scene or enabling random startup removes the upload. Invalid uploads leave the current background intact.
@@ -53,4 +66,8 @@ first frame is kept unless `motion: true` is passed** (the option exists for pag
 ## Risks
 
 Small, young, single-maintainer library; each scene is its own lazy chunk (the build emits one chunk per piece).
-Pin the version and keep the motion policy in Orole's code.
+Pin the version and keep the motion policy in Orole's code. Scenes run on the UI thread: measured in Chromium, one
+frame costs 1.2 to 8.7 ms for 29 scenes and about 21 ms for `edge-orbit` (headless, dev build), so at the default
+12 fps the heaviest scene uses about a quarter of a core. Moving the generator to a worker would remove that.
+Opening Settings used to load, run and screenshot every scene on the main thread (13 long tasks, 2.6 s blocked in a
+production build); the thumbnails replaced that.

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { GitHubSettings } from "@/features/github/GitHubSettings";
 import { useGitHub } from "@/features/github/store";
 import { ServerSettings, STATUS } from "@/features/mcp/ServerDetail";
+import { useVisibleServers } from "@/features/mcp/disconnect";
 import { Failure, Loading, useRemote } from "@/features/mcp/shared";
 import { inDesktop } from "@/lib/backend";
 import { useUI } from "@/stores/ui";
@@ -40,6 +41,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 const pill = "rounded-full";
+const EMPTY: ServerState[] = [];
 
 /**
  * Settings > Integrations: every service Orole connects to, whether built in (GitHub) or an
@@ -63,7 +65,7 @@ export function Integrations() {
     return events.mcpAuthDone.on(({ serverId }) => setWaiting((current) => { const next = new Set(current); next.delete(serverId); return next; }));
   }, []);
 
-  const list = servers.data ?? [];
+  const list = useVisibleServers(servers.data ?? EMPTY);
   const selected = list.find((server) => server.id === open);
   if (open === "github") {
     return (

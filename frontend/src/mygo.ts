@@ -542,6 +542,16 @@ export interface Choice {
   description?: string;
 }
 
+/**
+ * CleanupFailed is published as "mcp.cleanup.failed" when the background cleanup after Remove did not
+ * finish cleanly: the server is already gone, but a connection or stored credentials may linger.
+ */
+export interface CleanupFailed {
+  serverId: string;
+  name: string;
+  error: string;
+}
+
 /** Status is what the UI shows for one provider. */
 export interface CliruntimeStatus {
   id: string;
@@ -4968,6 +4978,8 @@ export const events = {
   mcpStatus: event<ServerState>("mcp:status"),
   mcpAuthUrl: event<AuthStart>("mcp:auth-url"),
   mcpAuthDone: event<AuthDone>("mcp:auth-done"),
+  /** MCPCleanupFailed: a server was removed, but closing its connection or deleting its credentials did not finish. */
+  mcpCleanupFailed: event<CleanupFailed>("mcp:cleanup-failed"),
   policyPending: event<ApprovalQueue>("policy:pending"),
   notificationsChanged: event<NotificationEvent>("notifications:changed"),
   filesChanged: event<FilesChanged>("files:changed"),

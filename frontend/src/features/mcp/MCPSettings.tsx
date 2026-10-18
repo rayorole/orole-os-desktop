@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { MCP } from "@/mygo";
+import { MCP, type ServerState } from "@/mygo";
 import { inDesktop } from "@/lib/backend";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
+import { useVisibleServers } from "./disconnect";
 import { errorText, Failure, Loading, NoResults, useRemote } from "./shared";
 import { ServerSettings } from "./ServerDetail";
 
@@ -14,13 +15,16 @@ export const QUICK_SERVERS = {
   drive: { name: "Orole Drive", url: "https://drive.orole.be/api/mcp" },
 };
 
+const EMPTY: ServerState[] = [];
+
 export function MCPSettings({ adapter }: { adapter: "mail" | "drive" }) {
   const servers = useRemote(() => MCP.list(), "servers", true, "mcp-servers");
   const [adding, setAdding] = useState(false);
   const preset = adapter;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const selected = (servers.data ?? []).filter((server) => server.adapter === adapter);
+  const list = useVisibleServers(servers.data ?? EMPTY);
+  const selected = list.filter((server) => server.adapter === adapter);
   async function add(form: HTMLFormElement) {
     const data = new FormData(form);
     setBusy(true); setError(null);
@@ -34,7 +38,7 @@ export function MCPSettings({ adapter }: { adapter: "mail" | "drive" }) {
     <p className="max-w-prose text-muted-foreground">Connect a Streamable HTTP MCP server. Tools and capabilities appear only after the server has been connected and discovered.</p>
     {!inDesktop && <NoResults title="Open the desktop app">MCP connections and credentials are managed by the local daemon, not this browser preview.</NoResults>}
     <div className="flex flex-wrap gap-2">
-      <Button variant="outline" disabled={!inDesktop || (servers.data ?? []).some((server) => server.adapter === adapter)} onClick={() => { setError(null); setAdding(true); }}>Add {adapter === "mail" ? "Mail" : "Drive"}</Button>
+      <Button variant="outline" disabled={!inDesktop || list.some((server) => server.adapter === adapter)} onClick={() => { setError(null); setAdding(true); }}>Add {adapter === "mail" ? "Mail" : "Drive"}</Button>
       <Button variant="ghost" disabled={!inDesktop || servers.loading} onClick={servers.reload}>Refresh connections</Button>
     </div>
     <Failure error={servers.error} retry={servers.reload} />

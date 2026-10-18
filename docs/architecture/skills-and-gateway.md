@@ -128,6 +128,12 @@ authenticated pipe client as the CLI and hooks (`OROLE_HOME` selects the data di
   permissions are not part of the index: they decorate catalogs only, are cached per server (dropped on every write
   and on removal), and the policy engine reads them straight from SQLite on each call, so a cached index never
   widens access. `mcp.status` is published only when a server's state differs from the last one published.
+- Removing a server (`mcp.servers.remove`) returns as soon as the registry row is deleted: that row decides, and a
+  failed delete changes nothing (the connection keeps running). Cancelling a pending sign-in, closing the session
+  (an HTTP DELETE to the remote server) and deleting the stored credentials then run in the background, each
+  limited to 10 s, because any of them can stall on a remote server or the OS credential store. A removed server
+  publishes no further `mcp.status`. If a step fails or times out the daemon writes an `mcp.server.cleanup` audit
+  row and publishes `mcp.cleanup.failed` (`{serverId, name, error}`), which the desktop shows as a warning.
 - IPC: `gateway.tools` (request `{sessionId, etag?}`, answer `{etag, tools}` or `{etag, notModified: true}` when the
   caller's etag is current, so the 30 s safety poll costs no tool bodies), `gateway.call`, `gateway.skills`,
   `gateway.skill`.
