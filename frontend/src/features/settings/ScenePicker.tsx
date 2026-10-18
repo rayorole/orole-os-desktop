@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { mount } from "ascii.rest";
-import { Check, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { customBackgroundPiece, importBackground } from "@/components/ascii/custom-background";
-import { ScenePreview } from "@/components/ascii/ScenePreview";
-import { SCENES } from "@/components/ascii/scenes";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { useSettings } from "@/stores/settings";
+import { NO_SCENE, SceneGrid } from "./SceneGrid";
 
 export function ScenePicker() {
   const scene = useSettings((state) => state.activeAsciiScene);
+  const enabled = useSettings((state) => state.ascii.enabled);
   const loaded = useSettings((state) => state.loaded);
   const set = useSettings((state) => state.set);
   const custom = useSettings((state) => state.ascii.customBackground);
@@ -57,19 +56,8 @@ export function ScenePicker() {
         <canvas ref={preview} aria-label="Converted background preview" role="img" className="w-full max-w-80 rounded-md" />
         <span className="truncate text-xs text-muted-foreground">{custom.name} · Current background</span>
       </div>}
-      <div role="group" aria-label="Background scene" className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
-      {SCENES.map((entry) => (
-        <Button key={entry.id} variant="outline" disabled={!loaded || busy} aria-pressed={!custom && scene === entry.id}
-          onClick={() => set("ascii", { scene: entry.id })}
-          className={cn("h-auto min-w-0 flex-col gap-0 overflow-hidden p-0 text-left sm:h-auto", !custom && scene === entry.id && "border-primary")}>
-          <ScenePreview scene={entry.id} />
-          <span className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-xs">
-            {entry.label}
-            {!custom && scene === entry.id && <Check aria-hidden="true" className="size-3.5 shrink-0 text-primary" />}
-          </span>
-        </Button>
-      ))}
-      </div>
+      <SceneGrid selected={custom ? null : enabled ? scene : NO_SCENE} disabled={!loaded || busy}
+        onSelect={(id) => set("ascii", id === NO_SCENE ? { enabled: false } : { scene: id, enabled: true })} />
     </div>
   );
 }

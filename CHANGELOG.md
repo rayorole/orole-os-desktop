@@ -8,6 +8,12 @@ notes. See `docs/development/updates.md`.
 
 ## Unreleased
 
+### Added
+- 17 more ASCII scenes for the Home background: Taj dawn, Varanasi ghats, Volcano night, Snow train, Saturn rise, Salt flat, Prism city, Night highway, Lake Pichola, Kite festival, Jungle falls, Jal Mahal, Gangaur ghat, Edge orbit, Cloud sea, Command city and Amer fort (from [ascii.rest](https://ascii.rest), MIT). The Background picker in Settings > Customization now offers a None tile next to the 30 scenes, and you can move through it with the arrow keys and choose with Enter or Space. None is the same as turning Show background off; your scene is kept for when you turn it back on. Opacity and Intensity still scale every scene.
+
+### Fixed
+- Settings > Customization opens right away. The Background picker used to load and run all 13 scenes, one after another on the page's main thread, just to draw their previews (about 2.6 seconds of frozen page in a release build, and 1.3 MB of images, every time the settings window opened). The picker now shows small pre-drawn thumbnails, and only the scene you picked is loaded, by the Home page.
+
 ### Changed
 - Every bot can now ask you a question as a card in the chat (a question with 2 to 6 suggested answers you can pick or answer in your own words), not only a new bot in its setup interview. Bots ask one question at a time and put the answer they recommend first. It is not offered during phone calls, to bots another bot handed work to, or in the bot builder preview, because nobody can answer a card there. Coding agents (Claude, Codex, omp) keep their own question tool.
 
