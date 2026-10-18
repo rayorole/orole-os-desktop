@@ -5,9 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +18,9 @@ import (
 	"github.com/rayorole/orole-os-desktop/internal/cliruntime"
 	"github.com/rayorole/orole-os-desktop/internal/llm"
 )
+
+// codexMedia is what Stream hands the CLI natively: images, as `-i` files.
+var codexMedia = media{images: true}
 
 // Runtime is the part of *cliruntime.Manager the providers use.
 type Runtime interface {
@@ -131,6 +137,8 @@ func parseCodexModels(raw []byte) ([]llm.Model, error) {
 				Effort string `json:"effort"`
 			} `json:"supported_reasoning_levels"`
 			Context int64 `json:"context_window"`
+			// Modalities is what the model reads; Codex's own catalogue treats an omitted list as text and images.
+			Modalities *[]string `json:"input_modalities"`
 		} `json:"models"`
 	}
 	// The CLI may print notices before the JSON document.
@@ -145,8 +153,8 @@ func parseCodexModels(raw []byte) ([]llm.Model, error) {
 		if m.Visibility != "list" || m.Slug == "" {
 			continue
 		}
-		// Images would have to travel as files through the CLI; they are not forwarded, so vision stays off.
-		model := llm.Model{ID: m.Slug, Name: m.DisplayName, Caps: llm.Caps{Tools: true, ContextWindow: m.Context}}
+		// The catalogue lists what each model reads. Only images are forwarded (`-i`); the CLI takes no PDF.
+		model := llm.Model{ID: m.Slug, Name: m.DisplayName, Caps: llm.Caps{Tools: true, Vision: m.Modalities == nil || slices.Contains(*m.Modalities, "image"), ContextWindow: m.Context}}
 		if model.Name == "" {
 			model.Name = m.Slug
 		}
@@ -180,7 +188,18 @@ func (p *Codex) Stream(ctx context.Context, req llm.Request) (<-chan llm.Delta, 
 		args = append(args, "-c", `model_reasoning_effort="`+req.Reasoning+`"`)
 	}
 	args = append(args, "-")
-	out, wait, err := p.start(ctx, path, dir, buildPrompt(req), args...)
+	// The prompt comes first: -i takes every value after it. Images are files in the scratch directory the CLI runs
+	// in, named by position (an attachment's own name is untrusted), and removed with it.
+	atts := codexMedia.attachments(req)
+	for i, a := range atts {
+		name := fmt.Sprintf("attachment-%d%s", i+1, imageExt[a.MIME])
+		if err := os.WriteFile(filepath.Join(dir, name), a.Data, 0o600); err != nil {
+			os.RemoveAll(dir)
+			return nil, &llm.Error{Code: llm.ErrServer, Message: "could not prepare the attachments for Codex"}
+		}
+		args = append(args, "-i", name)
+	}
+	out, wait, err := p.start(ctx, path, dir, buildPrompt(req, codexMedia), args...)
 	if err != nil {
 		os.RemoveAll(dir)
 		return nil, &llm.Error{Code: llm.ErrServer, Message: "could not start Codex: " + err.Error()}

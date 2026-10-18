@@ -107,7 +107,9 @@ func (p *Grok) Models(ctx context.Context) ([]llm.Model, error) {
 }
 
 // Stream runs one headless Grok turn. The prompt goes in a file in the scratch directory: Grok takes a prompt
-// as an argument or a file, not on stdin.
+// as an argument or a file, not on stdin. Images are not forwarded and the models declare no vision: Grok's image
+// input is `--prompt-json`, a JSON value on the command line, which cannot hold a real image (a Windows command
+// line stops at about 32 KB) and takes no file.
 func (p *Grok) Stream(ctx context.Context, req llm.Request) (<-chan llm.Delta, error) {
 	path, err := p.path()
 	if err != nil {
@@ -118,7 +120,7 @@ func (p *Grok) Stream(ctx context.Context, req llm.Request) (<-chan llm.Delta, e
 		return nil, &llm.Error{Code: llm.ErrServer, Message: "could not create a scratch directory"}
 	}
 	promptFile := filepath.Join(dir, "prompt.txt")
-	if err := os.WriteFile(promptFile, []byte(buildPrompt(req)), 0o600); err != nil {
+	if err := os.WriteFile(promptFile, []byte(buildPrompt(req, media{})), 0o600); err != nil {
 		os.RemoveAll(dir)
 		return nil, &llm.Error{Code: llm.ErrServer, Message: "could not write the prompt"}
 	}
