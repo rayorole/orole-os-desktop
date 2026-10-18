@@ -1,7 +1,9 @@
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUpIcon, FolderIcon, GitBranchIcon } from "lucide-react";
+import { useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { ArrowUpIcon, FolderIcon, GitBranchIcon, PaperclipIcon } from "lucide-react";
 import { Agents, type Session } from "@/mygo";
 import { composerFrame } from "@/components/assistant-ui/elements/surfaces";
+import { pastedFiles } from "@/lib/attachmentFiles";
+import { useFileDrop } from "@/lib/useFileDrop";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { ErrorNote } from "@/features/agents/shared";
@@ -77,6 +79,15 @@ function SessionComposer({ session }: { session: Session }) {
     useAgents.getState().upsert(await Agents.setPermissionMode(session.id, mode, confirmYolo));
   };
 
+  const dropAccepted = message.attachments.canAdd && !inactive;
+  const drop = useFileDrop({ enabled: true, accepting: dropAccepted, onFiles: (files) => void message.attachments.add(files), afterDrop: () => input.current?.focus() });
+  // A paste of files and no text attaches them; any text paste is left to the browser, exactly as before.
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = pastedFiles(e.clipboardData);
+    if (!files.length) return;
+    e.preventDefault();
+    void message.attachments.add(files);
+  };
   const hasContent = text.trim().length > 0 || message.attachments.ids.length > 0;
   return <div className="bg-background px-5 pt-2 pb-3">
     <div className="mx-auto flex max-w-4xl flex-col gap-1">
@@ -84,12 +95,12 @@ function SessionComposer({ session }: { session: Session }) {
       {!state.canSend ? <>
         <div className={cn(composerFrame, "px-3.5 py-3 text-muted-foreground text-sm")}><textarea aria-label="Message the agent" disabled rows={1} placeholder="Messages are unavailable" className="w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground" /></div>
         <p role="status" className="text-xs text-muted-foreground">{state.reason}</p>
-      </> : <form className="flex flex-col gap-1.5" onSubmit={(e) => { e.preventDefault(); send(); }}>
+      </> : <form className="flex flex-col gap-1.5" onSubmit={(e) => { e.preventDefault(); send(); }} {...drop.handlers}>
         {state.note && <p className="px-2 text-xs text-muted-foreground">{state.note}</p>}
-        <div className={cn(composerFrame, "flex flex-col gap-1.5 p-2")}>
+        <div className={cn(composerFrame, "relative flex flex-col gap-1.5 p-2")}>
           {message.attachments.files.length > 0 && <TaskAttachmentPreviews message={message} disabled={inactive} />}
           <textarea ref={input} aria-label="Message the agent" aria-description="Enter to send. Shift+Enter for a new line." placeholder="Reply to the agent…" value={text} disabled={inactive} rows={1}
-            onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
+            onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown} onPaste={onPaste}
             className="min-h-[44px] w-full min-w-0 resize-none bg-transparent px-1.5 pt-1 text-sm leading-[22px] outline-none placeholder:text-muted-foreground disabled:opacity-70" />
           <div className="flex h-7 min-w-0 items-center gap-1">
             <TaskAddMenu message={message} disabled={inactive} onInsert={insertText} />
@@ -107,6 +118,9 @@ function SessionComposer({ session }: { session: Session }) {
                 : <ComposerVoice compact quiet disabled={action.busy} onActiveChange={setVoiceActive} onTranscript={insertText} />}
             </div>
           </div>
+          {drop.dragging && <div aria-hidden className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-ring bg-background/90 text-sm text-muted-foreground">
+            <PaperclipIcon className="size-4 text-foreground" />{dropAccepted ? "Drop files to attach" : "No more files can be attached"}
+          </div>}
         </div>
         {(session.dir || session.branch) && <div className="flex min-w-0 items-center gap-3 px-2 text-xs text-muted-foreground">
           {session.dir && <Tooltip><TooltipTrigger render={<span className="flex min-w-0 items-center gap-1" />}><FolderIcon aria-hidden className="size-3.5 shrink-0" /><span className="max-w-40 truncate">{where}</span></TooltipTrigger><TooltipPopup className="max-w-sm break-all">{session.dir}</TooltipPopup></Tooltip>}

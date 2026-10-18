@@ -13,6 +13,8 @@ export interface PromptInputContextValue {
   dragging: boolean;
   /** Undefined when the composer takes no files. */
   addFiles?: (files: File[]) => void;
+  /** Takes pasted files even while the composer is full, so the caller can say why they were refused. Undefined when it takes no files. */
+  receiveFiles?: (files: File[]) => void;
   openFileDialog: () => void;
 }
 

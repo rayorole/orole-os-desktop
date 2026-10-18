@@ -103,7 +103,7 @@ export function useHomeTaskLaunch({ launcher = "home", initialProjectId, initial
   const permissionMode: PermissionMode = modeSupport(permissionSupport, chosenMode).available && (chosenMode !== "yolo" || yoloConfirmed) ? chosenMode : "manual";
   const [prompt, setPrompt] = useState(draft?.prompt ?? initialPrompt);
   const [busy, setBusy] = useState(false);
-  const attachments = useTaskAttachments(inDesktop && !busy && !source.offline, draft?.attachments);
+  const attachments = useTaskAttachments(inDesktop && !busy && !source.offline, draft?.attachments, !inDesktop ? "Attaching files needs the desktop app." : source.offline ? "Connect to the desktop daemon to attach files." : "");
   const inFlight = useRef(false);
   const attempt = useRef<{ signature: string; key: string } | null>(draft?.attempt ?? null);
   const blocked = !inDesktop ? "Open the desktop app to start a task."
