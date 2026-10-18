@@ -33,9 +33,13 @@ func (m *Manager) PermissionVersion() uint64 {
 // publishStatus publishes mcp.status for st, but only when st differs from what was last
 // published for that server (or force is set because the catalog behind it changed without
 // changing st). Subscribers re-list everything on each event, so identical repeats are pure cost.
+// A removed server publishes nothing more: its connection is still winding down in the background.
 func (m *Manager) publishStatus(st ServerState, force bool) {
 	m.statusMu.Lock()
 	defer m.statusMu.Unlock()
+	if _, gone := m.removed[st.ID]; gone {
+		return
+	}
 	if last, ok := m.lastStatus[st.ID]; ok && last == st && !force {
 		return
 	}
@@ -49,6 +53,7 @@ func (m *Manager) publishRemoved(id string) {
 	m.statusMu.Lock()
 	defer m.statusMu.Unlock()
 	delete(m.lastStatus, id)
+	m.removed[id] = struct{}{}
 	m.gen.Add(1)
 	m.publish("mcp.removed", map[string]string{"id": id})
 }

@@ -5,6 +5,7 @@ import type { ServerState } from "@/mygo";
 const api = vi.hoisted(() => ({
   list: vi.fn(), add: vi.fn(), startAuth: vi.fn(), cancelAuth: vi.fn(), catalog: vi.fn(), diagnostics: vi.fn(), setToolPermission: vi.fn(), remove: vi.fn(), update: vi.fn(),
   github: vi.fn(),
+  cleanupFailed: { handler: null as null | ((failure: { serverId: string; name: string; error: string }) => void) },
 }));
 
 vi.mock("@/lib/backend", () => ({ inDesktop: true, previewKey: "integrations-test" }));
@@ -16,10 +17,13 @@ vi.mock("@/mygo", () => {
     events: {
       mcpStatus: event, daemonState: event, githubChanged: event,
       mcpAuthDone: event,
+      mcpCleanupFailed: { on: (handler: (failure: { serverId: string; name: string; error: string }) => void) => { api.cleanupFailed.handler = handler; return () => { api.cleanupFailed.handler = null; }; } },
     },
   };
 });
 
+import { toastManager } from "@/components/ui/toast";
+import { useDisconnected } from "@/features/mcp/disconnect";
 import { Integrations } from "./Integrations";
 import { DIRECTORY, nameFromUrl, serverFor } from "./directory";
 
@@ -30,10 +34,12 @@ const server = (patch: Partial<ServerState>): ServerState => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useDisconnected.setState({ ids: new Set() });
   api.list.mockResolvedValue([]);
   api.github.mockResolvedValue({ connected: false });
   api.catalog.mockResolvedValue({ tools: [] });
   api.diagnostics.mockResolvedValue({});
+  api.remove.mockResolvedValue(undefined);
 });
 afterEach(cleanup);
 
@@ -210,13 +216,53 @@ describe("Integrations", () => {
       expect(screen.queryByRole("button", { name: "Reauthenticate" })).toBeNull();
     });
 
-    it("disconnects after confirmation and returns to the list", async () => {
-      await open();
+    async function confirmDisconnect() {
       fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
       const dialog = await screen.findByRole("dialog");
       fireEvent.click(within(dialog).getByRole("button", { name: "Disconnect" }));
+    }
+
+    it("disconnects after confirmation and returns to the list", async () => {
+      await open();
+      await confirmDisconnect();
       await waitFor(() => expect(api.remove).toHaveBeenCalledWith("s1"));
       expect(await screen.findByRole("button", { name: "Add Notion" })).toBeTruthy();
+    });
+
+    // While the daemon call was awaited the dialog stayed mounted and modal, so nothing else could be clicked.
+    it("closes the dialog at once and leaves the page usable while the daemon call is still pending", async () => {
+      api.remove.mockReturnValue(Promise.withResolvers<void>().promise);
+      await open();
+      await confirmDisconnect();
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(document.querySelector("[data-slot='dialog-backdrop']")).toBeNull();
+      expect(document.body.style.pointerEvents).not.toBe("none");
+      expect(document.querySelector("[inert], [aria-hidden='true']:not(svg)")).toBeNull();
+      expect(screen.getByRole("button", { name: "Add Vercel" })).toBeTruthy(); // the entry already left Connected
+      const search = screen.getByLabelText("Search integrations") as HTMLInputElement;
+      fireEvent.change(search, { target: { value: "notion" } });
+      expect(search.value).toBe("notion");
+    });
+
+    it("brings the server back and says why when the daemon refuses to disconnect it", async () => {
+      const toast = vi.spyOn(toastManager, "add").mockReturnValue("t");
+      api.remove.mockRejectedValue(new Error("internal: registry is locked"));
+      await open();
+      await confirmDisconnect();
+      await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ type: "error", title: "Could not disconnect Vercel", description: "internal: registry is locked" })));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(await screen.findByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+
+    it("warns when the daemon removed the server but could not finish its cleanup", async () => {
+      const toast = vi.spyOn(toastManager, "add").mockReturnValue("t");
+      await open();
+      await confirmDisconnect();
+      await waitFor(() => expect(api.remove).toHaveBeenCalled());
+      api.cleanupFailed.handler?.({ serverId: "other", name: "Other", error: "ignored" });
+      expect(toast).not.toHaveBeenCalled();
+      api.cleanupFailed.handler?.({ serverId: "s1", name: "Vercel", error: "removing the stored credentials failed: locked" });
+      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ type: "warning", description: "removing the stored credentials failed: locked" }));
     });
   });
 });
