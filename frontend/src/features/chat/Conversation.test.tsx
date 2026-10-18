@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot, BotChange, Message, RunState, SendRequest } from "@/mygo";
@@ -410,6 +410,102 @@ describe("composer", () => {
       const chip = (await screen.findByText("shot.png")).closest("[data-slot=composer-attachment]") as HTMLElement;
       expect(within(chip).getByRole("alert")).toHaveTextContent("cannot read images");
       expect(bridge.begin).not.toHaveBeenCalled();
+    });
+
+    describe("pasting", () => {
+      const withVision = () => useLLM.setState({ models: { openrouter: { models: [{ id: "claude", name: "Claude Sonnet", caps: { ...caps, vision: true }, reasoning: [] }], loading: false, error: null } } });
+      /** Fires a paste carrying `clipboardData`; defaultPrevented means the composer took it over. */
+      const paste = (files: File[], text = "") => {
+        const event = createEvent.paste(box(), { clipboardData: { files, items: [], types: [], getData: (type: string) => (type === "text/plain" ? text : "") } });
+        fireEvent(box(), event);
+        return event;
+      };
+      const shot = () => new File(["png-bytes"], "image.png", { type: "image/png" });
+
+      it("attaches a pasted screenshot for a vision model, stages it and sends its id", async () => {
+        withVision();
+        bridge.send.mockResolvedValue(msg(3));
+        await open([msg(1), msg(2)]);
+        expect(paste([shot()]).defaultPrevented).toBe(true);
+        const chip = (await screen.findByText("image.png")).closest("[data-slot=composer-attachment]") as HTMLElement;
+        await waitFor(() => expect(chip).toHaveAttribute("data-state", "done"));
+        expect(bridge.begin).toHaveBeenCalledWith({ name: "image.png", size: 9 });
+        expect(bridge.chunk).toHaveBeenCalledWith({ id: "up1", seq: 0, dataBase64: btoa("png-bytes") });
+        fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+        await waitFor(() => expect(bridge.send).toHaveBeenCalled());
+        expect(bridge.send.mock.calls[0]![0]).toMatchObject({ attachmentIds: ["att1"] });
+      });
+
+      it("attaches files pasted from the file explorer", async () => {
+        await open([msg(1), msg(2)]);
+        paste([new File(["hello"], "notes.txt", { type: "text/plain" }), new File(["%PDF"], "doc.pdf", { type: "application/pdf" })]);
+        expect(await screen.findByText("notes.txt")).toBeInTheDocument();
+        expect(await screen.findByText("doc.pdf")).toBeInTheDocument();
+        await waitFor(() => expect(bridge.begin).toHaveBeenCalledTimes(2));
+      });
+
+      it("leaves a text paste alone, even when the clipboard also has an image", async () => {
+        withVision();
+        await open([msg(1), msg(2)]);
+        expect(paste([], "just words").defaultPrevented).toBe(false);
+        expect(paste([shot()], "A1\tB1").defaultPrevented).toBe(false);
+        await act(async () => { await Promise.resolve(); });
+        expect(bridge.begin).not.toHaveBeenCalled();
+        expect(document.querySelector("[data-slot=composer-attachment]")).toBeNull();
+      });
+
+      it("refuses a pasted image up front when the model cannot read images, and says so on the chip", async () => {
+        await open([msg(1), msg(2)]);
+        paste([shot()]);
+        const chip = (await screen.findByText("image.png")).closest("[data-slot=composer-attachment]") as HTMLElement;
+        expect(within(chip).getByRole("alert")).toHaveTextContent("This model cannot read images. Choose a model with vision support.");
+        expect(bridge.begin).not.toHaveBeenCalled();
+      });
+
+      it("keeps ten files and puts the limit on the chips of the rest", async () => {
+        await open([msg(1), msg(2)]);
+        paste(Array.from({ length: 12 }, (_, i) => new File([`f${i}`], `f${i}.txt`, { type: "text/plain" })));
+        await waitFor(() => expect(document.querySelectorAll("[data-slot=composer-attachment]")).toHaveLength(12));
+        await waitFor(() => expect(bridge.begin).toHaveBeenCalledTimes(10));
+        const refused = Array.from(document.querySelectorAll("[data-slot=composer-attachment][data-state=error]"));
+        expect(refused).toHaveLength(2);
+        expect(refused[0]).toHaveTextContent("At most 10 files can be attached to one message.");
+      });
+
+      it("stores a safe name for a pasted file whose name the daemon would refuse", async () => {
+        await open([msg(1), msg(2)]);
+        paste([new File(["x"], "a:b?.txt", { type: "text/plain" })]);
+        expect(await screen.findByText("a_b_.txt")).toBeInTheDocument();
+        await waitFor(() => expect(bridge.begin).toHaveBeenCalledWith({ name: "a_b_.txt", size: 1 }));
+      });
+
+      it("discards a pasted file's staged copy when its chip is removed", async () => {
+        await open([msg(1), msg(2)]);
+        paste([new File(["hello"], "notes.txt", { type: "text/plain" })]);
+        const chip = (await screen.findByText("notes.txt")).closest("[data-slot=composer-attachment]") as HTMLElement;
+        await waitFor(() => expect(chip).toHaveAttribute("data-state", "done"));
+        fireEvent.click(within(chip).getByRole("button", { name: "Remove notes.txt" }));
+        await waitFor(() => expect(bridge.discard).toHaveBeenCalledWith("att1"));
+        expect(screen.queryByText("notes.txt")).toBeNull();
+      });
+
+      it("takes dropped files through the same adapter", async () => {
+        await open([msg(1), msg(2)]);
+        const dropzone = document.querySelector("[data-slot=composer] > div")!.firstElementChild as HTMLElement;
+        fireEvent.drop(dropzone, { dataTransfer: { types: ["Files"], files: [new File(["hello"], "notes.txt", { type: "text/plain" })] } });
+        expect(await screen.findByText("notes.txt")).toBeInTheDocument();
+        await waitFor(() => expect(bridge.begin).toHaveBeenCalledWith({ name: "notes.txt", size: 5 }));
+      });
+
+      it("takes no files in Research mode and says so", async () => {
+        await open([msg(1), msg(2)], withTools("research"));
+        fireEvent.click(screen.getByRole("button", { name: "Add files and research" }));
+        fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Research mode" }));
+        await screen.findByRole("button", { name: /Research mode on/ });
+        expect(paste([new File(["hello"], "notes.txt", { type: "text/plain" })]).defaultPrevented).toBe(true);
+        expect(await screen.findByText("Research mode takes text only. Turn it off to attach files.")).toBeInTheDocument();
+        expect(bridge.begin).not.toHaveBeenCalled();
+      });
     });
   });
 });

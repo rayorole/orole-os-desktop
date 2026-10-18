@@ -344,6 +344,14 @@ parts only); Enter / Shift+Enter step through matches and scroll to the message,
 Chunked upload (1 MiB chunks, 20 MiB per file, 10 per message), type sniffed from content, stored
 content-addressed at `<DataDir>/chat/attachments/<sha256>`; staged uploads expire after 24 h.
 
+The composer takes files from the + menu, a drop and a paste, all through the same adapter (`runtime/attachments.ts`), so every
+route shows the same chips and refusals. A paste is taken over only when it carries files and no text (`pastedFiles` in
+`lib/attachmentFiles.ts`): a clipboard with text and an image (a spreadsheet cell, a web selection) pastes its text. A file
+manager that adds the file's own name as text still counts as files. Names are made portable before upload (`portableFileName`).
+Research mode takes no files; pasting one says so. Images and PDFs are refused up front when the model's `Caps` say it cannot
+read them; the engine checks again. Account models: Claude reads images and PDFs, Codex images, Grok neither (see
+`cli-runtimes.md`). Text files travel in the prompt as fenced data for every model.
+
 ## Provider streams: idle timeout and retry
 All three streaming providers open the request with `llm.DoRetry`: a 429 or 5xx answer is retried (3 tries, jittered
 exponential backoff from 0.5 s capped at 8 s; a `Retry-After` of up to 5 s is waited out, a longer one is returned so

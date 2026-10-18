@@ -10,12 +10,15 @@ notes. See `docs/development/updates.md`.
 
 ### Added
 - Push notifications through ntfy. In Settings > Alerts, each kind (Needs you, Failed, Finished, Bot replies, Flow messages) has a Push toggle next to In app and Sound, off by default. Below the table you switch push on, choose the server (default ntfy.sh, or your own), copy or regenerate the topic, optionally add an access token and press Send test. The topic works like a password on a public server, and on ntfy.sh messages pass through their server and are cached for about 12 hours. The topic and token are kept in Windows Credential Manager.
+- You can paste images (a screenshot from the clipboard) and files (copied in the file explorer) into the bot chat box, the new task box and the follow-up box of a running code task, and drop files onto them. Pasted files are listed as chips (images show a thumbnail) that you can remove before sending. Pasting text works as before, also when the clipboard carries a picture of the text as well, as copying cells from a spreadsheet does. Code tasks take up to 8 files of 2 MB each and tell you which file is too large; the bot chat takes 10 files of 20 MB. Files with names Windows would refuse (colons, slashes, reserved names) are stored under a cleaned-up name.
+- Code agents (Claude Code, Codex, Oh My Pi) still receive attached files as copies in the task folder, listed in the prompt; nothing changed there.
 
 ### Changed
 - Every bot can now ask you a question as a card in the chat (a question with 2 to 6 suggested answers you can pick or answer in your own words), not only a new bot in its setup interview. Bots ask one question at a time and put the answer they recommend first. It is not offered during phone calls, to bots another bot handed work to, or in the bot builder preview, because nobody can answer a card there. Coding agents (Claude, Codex, omp) keep their own question tool.
 
 ### Fixed
 - Disconnecting an integration is instant. Before, pressing Disconnect kept the confirmation window open, blocking the whole page, until the daemon had closed the connection and deleted the credentials. That could take up to 30 seconds when the server was slow to hang up, and then fail. Now the window closes at once and the integration leaves the list; closing the connection and deleting its stored credentials finish in the background, each limited to 10 seconds. If the daemon refuses the disconnect, the integration comes back with an error. If it is disconnected but the cleanup did not finish (for example Windows Credential Manager did not answer), a warning says so.
+- A bot that runs on your Claude account no longer says "This model cannot read images" for a screenshot or a PDF. The Claude models were listed without image and PDF support, so the chat refused the file before it reached Claude. Images and PDFs now go to Claude Code as real attachments. Bots on your ChatGPT account (Codex) can now read images too, as long as the model lists image input. Bots on a Grok account still cannot read images, because Grok's command line cannot carry one, and the chat says so before you send.
 
 ## 0.4.3-dev - 2026-10-17
 

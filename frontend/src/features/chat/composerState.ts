@@ -5,13 +5,14 @@ import { formatSize } from "./parts/format";
 /** How an assistant-ui attachment reads as a chip; a failed one carries the reason, an uploading one says so. */
 export function chipOf(attachment: Attachment): ComposerAttachment {
   const kind = attachment.type === "image" ? "image" : "text";
+  const file = attachment.file;
   switch (attachment.status.type) {
     case "running":
-      return { name: attachment.name, kind, state: "uploading", meta: "Uploading…" };
+      return { name: attachment.name, kind, file, state: "uploading", meta: "Uploading…" };
     case "incomplete":
-      return { name: attachment.name, kind, state: "error", meta: attachment.status.message || "Could not upload this file." };
+      return { name: attachment.name, kind, file, state: "error", meta: attachment.status.message || "Could not upload this file." };
     default:
-      return { name: attachment.name, kind, state: "done", meta: attachment.file ? formatSize(attachment.file.size) : "Ready" };
+      return { name: attachment.name, kind, file, state: "done", meta: file ? formatSize(file.size) : "Ready" };
   }
 }
 

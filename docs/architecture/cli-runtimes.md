@@ -50,7 +50,10 @@ the user as raw text. Parameter values are raw text: a parameter the schema type
 other is used as JSON when it parses.
 
 Limits: `codex exec` prints whole messages, so replies appear at once instead of streaming; every step of a tool loop is a
-new CLI start (a few seconds); images and PDFs are not forwarded (vision is off for these models).
+new CLI start (a few seconds). Images are forwarded as files in the scratch directory with `-i` (named `attachment-N.ext`,
+never by the user's file name, removed with the directory; the `-` prompt placeholder comes first because `-i` takes every
+value after it); PDFs are not (Codex takes images only). A model has vision when the catalogue (`codex debug models`) lists
+`image` in its `input_modalities`, or omits the list, which is how Codex's own catalogue defaults.
 
 ## Claude as a model for bots
 The provider `claude` (`internal/llm/cli/claude.go`) works like the Codex one, with two differences. Claude Code streams,
@@ -61,6 +64,13 @@ newest of its family), because the CLI has no model list. Each call is
 no built-in tool, user setting, MCP server or skill is loaded, and Claude Code's own system prompt is replaced. The bot's
 instructions and the conversation go on stdin, never on the command line.
 
+Images and PDFs go to the model natively. A turn that holds any switches to `--input-format stream-json`: stdin is then
+one user message whose first content block is the rendered prompt and whose next blocks are base64 `image` and `document`
+blocks (`claudeInput`). A turn without them keeps the plain text prompt. Every alias declares `Vision` and `PDF` once, so a
+new Claude model needs no table entry (before this, the aliases declared neither, and the chat refused every image for a bot
+on a Claude account with "This model cannot read images"). Attachment names are quoted in the prompt; an image the CLI
+cannot take (a type other than PNG, JPEG, GIF or WebP) stays a placeholder line.
+
 Anthropic's terms limit subscription sign-in to ordinary individual use of the unmodified CLI; bots that work in the
 background on a plan can go past that. The Accounts page says so next to the Claude row.
 
@@ -68,6 +78,11 @@ background on a plan can go past that. The Accounts page says so next to the Cla
 Grok Build's headless mode (`--prompt-file`, `--output-format streaming-messages-json --include-partial-messages`) speaks
 the same Anthropic Messages wire format as Claude Code, so `internal/llm/cli/grok.go` shares `readStreamJSON` with the
 Claude provider. Text streams. Models come from `grok models`, which also tells whether anyone is signed in.
+
+Grok models declare no vision, so the composer warns about an image up front and the engine refuses it. Grok's image input
+is `--prompt-json` (ACP content blocks, `{"type":"image","data":<base64>,"mimeType":...}`; checked with a real call), which is
+a command-line argument: it cannot hold a real screenshot within a Windows command line (about 32 KB), and the CLI reads it
+from no file or stdin (`--prompt-file` takes plain text).
 
 The CLI has no switch for "no tools". Orole removes its built-in tools with `--disallowed-tools`, `--no-subagents` and
 `--no-plan`, replaces its system prompt and runs it in an empty scratch directory. A few shell and subagent tools cannot be

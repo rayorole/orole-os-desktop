@@ -32,8 +32,36 @@ You will receive the results and can then answer or call more tools. When no too
 
 `
 
-// buildPrompt renders a request as one prompt for a CLI that takes text.
-func buildPrompt(req llm.Request) string {
+// media is what a CLI can be handed besides text. A CLI that takes neither gets the placeholder line it always did.
+type media struct{ images, pdfs bool }
+
+// imageExt maps the image types the CLIs accept to a file extension.
+var imageExt = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+
+// forwards reports whether the CLI receives p itself (so the prompt can say it is attached) rather than a placeholder.
+func (m media) forwards(p llm.Part) bool {
+	if len(p.Data) == 0 {
+		return false
+	}
+	return p.Kind == llm.PartImage && m.images && imageExt[p.MIME] != "" || p.Kind == llm.PartFile && m.pdfs && p.MIME == "application/pdf"
+}
+
+// attachments returns the parts of req the CLI receives itself, in conversation order.
+func (m media) attachments(req llm.Request) []llm.Part {
+	var out []llm.Part
+	for _, msg := range req.Messages {
+		for _, p := range msg.Parts {
+			if m.forwards(p) {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}
+
+// buildPrompt renders a request as one prompt for a CLI that takes text. File names are untrusted, so they are
+// quoted: a name with a newline cannot start a fake turn or instruction.
+func buildPrompt(req llm.Request, native media) string {
 	var b strings.Builder
 	b.WriteString(preamble)
 	b.WriteString("\n\n# System instructions\n")
@@ -58,7 +86,15 @@ func buildPrompt(req llm.Request) string {
 			case llm.PartText:
 				fmt.Fprintf(&b, "[%s]\n%s\n\n", label(m.Role), strings.TrimSpace(p.Text))
 			case llm.PartImage, llm.PartFile:
-				fmt.Fprintf(&b, "[%s attached a file the model cannot see: %s]\n\n", label(m.Role), p.Name)
+				noun := "an image"
+				if p.Kind == llm.PartFile {
+					noun = "a PDF"
+				}
+				if native.forwards(p) {
+					fmt.Fprintf(&b, "[%s attached %s %q, passed to you alongside this prompt]\n\n", label(m.Role), noun, p.Name)
+				} else {
+					fmt.Fprintf(&b, "[%s attached a file the model cannot see: %q]\n\n", label(m.Role), p.Name)
+				}
 			case llm.PartToolCall:
 				fmt.Fprintf(&b, "[assistant called the tool %s with %s]\n\n", p.ToolName, compact(p.Args))
 			case llm.PartToolResult:

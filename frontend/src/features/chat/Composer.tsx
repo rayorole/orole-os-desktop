@@ -1,6 +1,6 @@
 import { ComposerPrimitive, useAui, useAuiState } from "@assistant-ui/react";
 import { ArrowUpIcon, AtSignIcon, FlaskConicalIcon, PaperclipIcon, PlusIcon, ScrollTextIcon, SlashIcon, SquareIcon, XIcon } from "lucide-react";
-import { memo, useEffect, useId, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useEffect, useId, useRef, useState, type ClipboardEvent, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
 import { ComposerAttachmentChip, ComposerAttachments } from "@/components/assistant-ui/elements/composer-attachments";
 import { composerFrame } from "@/components/assistant-ui/elements/surfaces";
 import { BotAvatar } from "@/components/shell/BotAvatar";
@@ -19,6 +19,7 @@ import { chipOf, useCanSend } from "./composerState";
 import { MentionHighlight } from "./MentionHighlight";
 import { mentionDeletion, useMentionTargets, type MentionTarget } from "./mentions";
 import { MAX_ATTACHMENTS } from "./runtime/attachments";
+import { pastedFiles } from "@/lib/attachmentFiles";
 
 /** Opens the system file picker and hands each file to the composer, which stages it on the daemon. */
 function pickFiles(add: (file: File) => Promise<void>) {
@@ -46,6 +47,7 @@ export const Composer = memo(function Composer({ bot, running }: { bot: Bot; run
   const text = useAuiState((s) => s.composer.text);
   const canSend = useCanSend();
   const [dictating, setDictating] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const hasResearch = bot.config.tools.some((tool) => tool.id === "research");
   const research = useChatDrafts((s) => s.drafts[bot.id]?.research ?? false) && hasResearch;
   const failed = attachments.some((attachment) => attachment.status.type === "incomplete");
@@ -93,7 +95,17 @@ export const Composer = memo(function Composer({ bot, running }: { bot: Bot; run
   }, [aui, bot.id]);
 
   const send = () => { if (canSend) aui.composer.send(); };
-  const setResearch = (on: boolean) => useChatDrafts.getState().setDraft(bot.id, { research: on });
+  // A paste of files and no text attaches them, one by one through the same adapter as the + menu and a drop (its
+  // chips carry what was refused and why). Any text paste is left to the browser, exactly as before.
+  const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = pastedFiles(event.clipboardData);
+    if (files.length === 0) return;
+    event.preventDefault();
+    if (research) { setNotice("Research mode takes text only. Turn it off to attach files."); return; }
+    setNotice(null);
+    for (const file of files) void aui.composer.addAttachment(file).catch(() => {});
+  };
+  const setResearch = (on: boolean) => { setNotice(null); useChatDrafts.getState().setDraft(bot.id, { research: on }); };
   const addDictation = (value: string) => {
     const current = aui.composer.getState().text;
     aui.composer.setText(current ? `${current}${/\s$/.test(current) ? "" : " "}${value}` : value);
@@ -188,6 +200,8 @@ export const Composer = memo(function Composer({ bot, running }: { bot: Bot; run
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onKeyDown={onKeyDown}
+            addAttachmentOnPaste={false}
+            onPaste={onPaste}
           />
         </div>
         <div className="flex h-7 min-w-0 items-center gap-1">
@@ -218,5 +232,6 @@ export const Composer = memo(function Composer({ bot, running }: { bot: Bot; run
       </ComposerPrimitive.AttachmentDropzone>
     </div>
     {failed && <p role="status" className="px-1 text-xs text-muted-foreground">Remove files that could not be attached to send your message.</p>}
+    {notice && <p role="status" className="px-1 text-xs text-muted-foreground">{notice}</p>}
   </ComposerPrimitive.Root>;
 });

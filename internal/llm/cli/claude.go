@@ -64,13 +64,45 @@ func (p *Claude) Validate(context.Context) (llm.Account, error) {
 }
 
 // Models lists the aliases the CLI documents for `--model`: each always means the newest model of that family, so
-// the list needs no update when Anthropic ships one. The CLI has no command that lists models.
+// the list needs no update when Anthropic ships one. The CLI has no command that lists models. Every Claude model
+// reads images and PDFs, and Stream forwards both, so each alias declares that once instead of per model id.
 func (*Claude) Models(context.Context) ([]llm.Model, error) {
+	multimodal := llm.Caps{Tools: true, Vision: true, PDF: true}
+	reasoning := multimodal
+	reasoning.Reasoning = true
 	return []llm.Model{
-		{ID: "opus", Name: "Claude Opus", Caps: llm.Caps{Tools: true, Reasoning: true}, Reasoning: claudeLevels},
-		{ID: "sonnet", Name: "Claude Sonnet", Caps: llm.Caps{Tools: true, Reasoning: true}, Reasoning: claudeLevels},
-		{ID: "haiku", Name: "Claude Haiku", Caps: llm.Caps{Tools: true}},
+		{ID: "opus", Name: "Claude Opus", Caps: reasoning, Reasoning: claudeLevels},
+		{ID: "sonnet", Name: "Claude Sonnet", Caps: reasoning, Reasoning: claudeLevels},
+		{ID: "haiku", Name: "Claude Haiku", Caps: multimodal},
 	}, nil
+}
+
+// claudeMedia is what Stream hands the CLI natively: images and PDFs as content blocks of a stream-json user turn.
+var claudeMedia = media{images: true, pdfs: true}
+
+// claudeInput is the one user turn `claude --input-format stream-json` reads from stdin: the rendered prompt
+// followed by each image or PDF as a base64 content block.
+func claudeInput(prompt string, atts []llm.Part) (string, error) {
+	type source struct {
+		Type      string `json:"type"`
+		MediaType string `json:"media_type"`
+		Data      []byte `json:"data"` // encoded as base64 by encoding/json
+	}
+	type block struct {
+		Type   string  `json:"type"`
+		Text   string  `json:"text,omitempty"`
+		Source *source `json:"source,omitempty"`
+	}
+	content := []block{{Type: "text", Text: prompt}}
+	for _, a := range atts {
+		kind := "image"
+		if a.Kind == llm.PartFile {
+			kind = "document"
+		}
+		content = append(content, block{Type: kind, Source: &source{Type: "base64", MediaType: a.MIME, Data: a.Data}})
+	}
+	line, err := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": content}})
+	return string(line) + "\n", err
 }
 
 // Stream runs one `claude -p` turn with every Claude Code tool, setting source, MCP server and skill turned off, so
@@ -92,7 +124,16 @@ func (p *Claude) Stream(ctx context.Context, req llm.Request) (<-chan llm.Delta,
 	if req.Reasoning != "" {
 		args = append(args, "--effort", req.Reasoning)
 	}
-	out, wait, err := p.start(ctx, path, dir, buildPrompt(req), args...)
+	stdin := buildPrompt(req, claudeMedia)
+	if atts := claudeMedia.attachments(req); len(atts) > 0 {
+		// Images and PDFs cannot travel in the text prompt; the CLI reads them from a stream-json user turn.
+		if stdin, err = claudeInput(stdin, atts); err != nil {
+			os.RemoveAll(dir)
+			return nil, &llm.Error{Code: llm.ErrServer, Message: "could not prepare the attachments for Claude"}
+		}
+		args = append(args, "--input-format", "stream-json")
+	}
+	out, wait, err := p.start(ctx, path, dir, stdin, args...)
 	if err != nil {
 		os.RemoveAll(dir)
 		return nil, &llm.Error{Code: llm.ErrServer, Message: "could not start Claude: " + err.Error()}

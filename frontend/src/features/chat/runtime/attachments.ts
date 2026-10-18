@@ -1,5 +1,6 @@
 import type { AttachmentAdapter, PendingAttachment } from "@assistant-ui/react";
 import { Chat, type Caps } from "@/mygo";
+import { portableFileName } from "@/lib/attachmentFiles";
 
 /** Mirrors internal/chat/api.go for UX only; the daemon validates for real. */
 export const MAX_ATTACHMENT_BYTES = 20 << 20;
@@ -36,7 +37,7 @@ const errorText = (cause: unknown) => (cause instanceof Error ? cause.message : 
 
 /** Uploads one file in 1 MiB chunks and commits it; a failed or aborted upload is discarded on the daemon. Resolves with the committed attachment id. */
 export async function uploadFile(file: File, signal?: AbortSignal): Promise<string> {
-  const { id } = await Chat.beginAttachment({ name: file.name, size: file.size });
+  const { id } = await Chat.beginAttachment({ name: portableFileName(file.name), size: file.size });
   try {
     let seq = 0;
     for (let offset = 0; offset < file.size; offset += CHUNK_BYTES, seq++) {
@@ -69,7 +70,7 @@ export function createAttachmentAdapter(): BotAttachmentAdapter {
     setSupport(next) { support = next; },
     async *add({ file }) {
       const id = crypto.randomUUID();
-      const base = { id, type: file.type.startsWith("image/") ? "image" : "file", name: file.name, contentType: file.type, file } satisfies Omit<PendingAttachment, "status">;
+      const base = { id, type: file.type.startsWith("image/") ? "image" : "file", name: portableFileName(file.name), contentType: file.type, file } satisfies Omit<PendingAttachment, "status">;
       const problem = problemWith(file, entries.size, support);
       if (problem) {
         yield { ...base, status: { type: "incomplete", reason: "error", message: problem } };
