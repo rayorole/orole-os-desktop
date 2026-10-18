@@ -104,8 +104,8 @@ type BotConfig struct {
 	Jarvis BotJarvis     `json:"jarvis,omitzero"`
 	Memory []ScopeAccess `json:"memory"` // grants beyond the private scope
 	Limits BotLimits     `json:"limits"`
-	// Setup marks a freshly created bot that still has to learn its purpose: it is offered the setup
-	// tools (ask_user, save_profile) until it saves its own instructions.
+	// Setup marks a freshly created bot that still has to learn its purpose: it is offered the save_profile
+	// tool (and ask_user, which every bot has) until it saves its own instructions.
 	Setup bool `json:"setup,omitempty"`
 	// Pinned keeps the bot at the top of the bot list. It is changed only by PinBot: saving a bot never touches it.
 	Pinned bool `json:"pinned,omitempty"`

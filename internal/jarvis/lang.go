@@ -158,7 +158,7 @@ var toolKinds = map[string]string{
 	"list_tasks": toolSilent, "task_status": toolSilent, "datetime": toolSilent,
 	"jarvis_rule_add": toolSilent, "jarvis_rule_list": toolSilent, "jarvis_rule_delete": toolSilent,
 	"call_owner": toolSilent, "end_call": toolSilent,
-	"ask_user": toolSilent, "save_profile": toolSilent, "update_instructions": toolSilent,
+	"save_profile": toolSilent, "update_instructions": toolSilent,
 	"show_table": toolSilent, "show_chart": toolSilent, "show_diagram": toolSilent, "show_flow_graph": toolSilent,
 	"show_math": toolSilent, "show_spec_sheet": toolSilent, "show_comparison": toolSilent, "show_timeline": toolSilent,
 	"show_job_progress": toolSilent, "show_todo_list": toolSilent, "show_document": toolSilent,

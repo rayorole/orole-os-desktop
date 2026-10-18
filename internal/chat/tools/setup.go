@@ -4,33 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/rayorole/orole-os-desktop/internal/chat"
 	"github.com/rayorole/orole-os-desktop/internal/llm"
 )
 
-// Tool names of the setup conversation.
+// Tool names of the setup conversation (ask_user is the built-in tool of every bot: AskUserName).
 const (
-	AskUserName            = "ask_user"
 	SaveProfileName        = "save_profile"
 	UpdateInstructionsName = "update_instructions"
-)
-
-const (
-	maxQuestionRunes    = 300
-	maxOptionRunes      = 80
-	maxDescriptionRunes = 160
-	minOptions          = 2
-	maxOptions          = 6
 )
 
 const setupPrompt = `## Setup
 You were just created and have no purpose yet. Your first job is to learn it from the user, then write your own instructions.
 - Your first reply: a short, friendly greeting in plain text that names what you noticed about the user's existing bots (below), then call ask_user in that same turn to ask what you will be used for.
-- Make the suggested answers specific to this user: propose roles that fill gaps the existing bots leave open or that complement them, never a role an existing bot already covers. Give each a short label and a one-line description. The user can also type their own answer.
-- Ask exactly ONE question per turn: a single ask_user call, never several, with 2 to 6 suggested answers. The question card shows the question itself, so do not repeat it in text. After calling ask_user, stop and wait: the answer arrives as the next message.
-- Choose each next question from what the user has answered so far: skip what earlier answers already cover and dig into what they left open. Cover your purpose, what the user wants done, tone and language, and anything you must always or never do, but only as far as you still need it. Keep it to a few questions.
+- Make the suggested answers specific to this user: propose roles that fill gaps the existing bots leave open or that complement them, never a role an existing bot already covers.
+- Ask one question per turn, following the rules for ask_user above, and choose the next one from what the user has answered so far: skip what earlier answers already cover and dig into what they left open. Cover your purpose, what the user wants done, tone and language, and anything you must always or never do, but only as far as you still need it. Keep it to a few questions.
 - When you know enough, call save_profile with a one-sentence description and complete instructions written in the second person ("You are ..."). Then tell the user you are ready and what you can do.
 - Until you have saved your profile you have no other tools. Never claim to have saved it before the tool succeeded.`
 
@@ -69,8 +58,9 @@ type BotStore interface {
 	SaveBot(ctx context.Context, in chat.BotInput) (chat.Bot, error)
 }
 
-// Setup lets a freshly created bot (BotConfig.Setup) ask the user multiple-choice questions and then
-// write its own description and instructions. Once saved, the flag is cleared and the tools disappear.
+// Setup lets a freshly created bot (BotConfig.Setup) write its own description and instructions after
+// questioning the user with ask_user. Once saved, the flag is cleared and save_profile disappears. For a
+// finished bot it offers update_instructions.
 type Setup struct {
 	Bots BotStore
 }
@@ -93,14 +83,6 @@ func (t *Setup) Specs(bot chat.Bot, caps llm.Caps) []llm.ToolSpec {
 	}
 	return []llm.ToolSpec{
 		{
-			Name:        AskUserName,
-			Description: "Ask the user one question with suggested answers shown as buttons. The user can pick one or type their own answer; it arrives as their next message. Stop after calling this and wait for the reply.",
-			Schema: json.RawMessage(`{"type":"object","properties":{` +
-				`"question":{"type":"string","description":"The question, one short sentence"},` +
-				`"options":{"type":"array","minItems":2,"maxItems":6,"items":{"type":"object","properties":{"label":{"type":"string","description":"Short answer"},"description":{"type":"string","description":"Optional one-line explanation"}},"required":["label"],"additionalProperties":false}}},` +
-				`"required":["question","options"],"additionalProperties":false}`),
-		},
-		{
 			Name:        SaveProfileName,
 			Description: "Save your own description and instructions once you know your purpose. Ends the setup.",
 			Schema: json.RawMessage(`{"type":"object","properties":{` +
@@ -118,41 +100,10 @@ func (t *Setup) Call(ctx context.Context, rc chat.RunContext, name string, args 
 	switch {
 	case name == UpdateInstructionsName && !rc.Bot.Config.Setup:
 		return t.save(ctx, rc.BotID, args, false)
-	case name == AskUserName && rc.Bot.Config.Setup:
-		return t.ask(args)
 	case name == SaveProfileName && rc.Bot.Config.Setup:
 		return t.save(ctx, rc.BotID, args, true)
 	}
 	return errResult("this tool is not available right now")
-}
-
-func (t *Setup) ask(args json.RawMessage) (chat.ToolResult, error) {
-	var a struct {
-		Question string        `json:"question"`
-		Options  []chat.Choice `json:"options"`
-	}
-	if err := json.Unmarshal(args, &a); err != nil {
-		return errResult("invalid arguments: question and options (objects with label and optional description) are required")
-	}
-	question := strings.TrimSpace(a.Question)
-	if question == "" || utf8.RuneCountInString(question) > maxQuestionRunes {
-		return errResult("question must be 1 to %d characters", maxQuestionRunes)
-	}
-	var choices []chat.Choice
-	for _, o := range a.Options {
-		c := chat.Choice{Label: strings.TrimSpace(o.Label), Description: strings.TrimSpace(o.Description)}
-		if c.Label == "" || utf8.RuneCountInString(c.Label) > maxOptionRunes || utf8.RuneCountInString(c.Description) > maxDescriptionRunes {
-			return errResult("each option needs a label of 1 to %d characters and a description of at most %d", maxOptionRunes, maxDescriptionRunes)
-		}
-		choices = append(choices, c)
-	}
-	if len(choices) < minOptions || len(choices) > maxOptions {
-		return errResult("give %d to %d options", minOptions, maxOptions)
-	}
-	return chat.ToolResult{
-		Text:  "The question and its options are now shown to the user. End your turn without writing anything else; their answer arrives as the next message.",
-		Parts: []chat.MsgPart{{Type: chat.PartQuestion, Text: question, Choices: choices}},
-	}, nil
 }
 
 // save writes the bot's own instructions. During setup it also takes the description and ends the setup;

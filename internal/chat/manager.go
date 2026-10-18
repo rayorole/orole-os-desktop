@@ -85,7 +85,7 @@ type Manager struct {
 	mu       sync.Mutex
 	memory   Memory
 	tools    []Tool
-	sections []func(Bot) string
+	sections []promptSection
 	// userSections are added only to runs that answer the user's own message (not drafts,
 	// automation messages, reports or hand-offs).
 	userSections []func(Bot) string
@@ -179,15 +179,32 @@ func (m *Manager) AddTools(tools ...Tool) {
 	m.mu.Unlock()
 }
 
+// promptSection is one registered system-prompt section. tool, when set, makes it conditional: the run must be
+// offered that tool.
+type promptSection struct {
+	tool string
+	fn   func(Bot) string
+}
+
 // AddPromptSection registers a function whose non-empty result is appended, as plain text, to every
 // bot's system prompt after the standing rules. Sections appear in registration order. The text must
 // be trusted (for example the user-approved skill index): it is not fenced.
 func (m *Manager) AddPromptSection(fn func(bot Bot) string) {
+	m.addSection("", fn)
+}
+
+// AddToolSection registers a prompt section like AddPromptSection that is only added to runs whose model is
+// actually offered the named tool: a section that explains a tool must not reach a run that cannot call it.
+func (m *Manager) AddToolSection(tool string, fn func(bot Bot) string) {
+	m.addSection(tool, fn)
+}
+
+func (m *Manager) addSection(tool string, fn func(Bot) string) {
 	if fn == nil {
 		return
 	}
 	m.mu.Lock()
-	m.sections = append(m.sections, fn)
+	m.sections = append(m.sections, promptSection{tool: tool, fn: fn})
 	m.mu.Unlock()
 }
 
@@ -348,14 +365,21 @@ func (m *Manager) integrationNames(ctx context.Context, ids []string) map[string
 }
 
 // promptSections renders the registered sections for a run; user sections only when the run answers
-// the user's own message in a stored conversation.
-func (m *Manager) promptSections(bot Bot, fromUser bool) []string {
+// the user's own message in a stored conversation. A tool section is skipped unless ts offers that tool.
+func (m *Manager) promptSections(bot Bot, fromUser bool, ts toolset) []string {
 	m.mu.Lock()
-	fns := slices.Clone(m.sections)
-	if fromUser {
-		fns = append(fns, m.userSections...)
-	}
+	secs := slices.Clone(m.sections)
+	users := slices.Clone(m.userSections)
 	m.mu.Unlock()
+	fns := make([]func(Bot) string, 0, len(secs)+len(users))
+	for _, s := range secs {
+		if _, offered := ts.route[s.tool]; s.tool == "" || offered {
+			fns = append(fns, s.fn)
+		}
+	}
+	if fromUser {
+		fns = append(fns, users...)
+	}
 	var out []string
 	for _, fn := range fns {
 		if s := strings.TrimSpace(fn(bot)); s != "" {

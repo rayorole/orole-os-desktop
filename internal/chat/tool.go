@@ -82,6 +82,10 @@ const (
 	ToolComputerReadFile  = "computer_read_file"
 )
 
+// ToolAskUser is the question card tool (tools.AskUser). A run whose reply the user cannot answer is never offered
+// it (prep.userCanAnswer).
+const ToolAskUser = "ask_user"
+
 // repeatableTool reports whether a tool may be called with the same arguments again without counting as a doom loop.
 func repeatableTool(name string) bool {
 	switch name {

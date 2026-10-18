@@ -310,8 +310,8 @@ export interface BotConfig {
   memory: ScopeAccess[];
   limits: BotLimits;
   /**
-   * Setup marks a freshly created bot that still has to learn its purpose: it is offered the setup
-   * tools (ask_user, save_profile) until it saves its own instructions.
+   * Setup marks a freshly created bot that still has to learn its purpose: it is offered the save_profile
+   * tool (and ask_user, which every bot has) until it saves its own instructions.
    */
   setup?: boolean;
   /** Pinned keeps the bot at the top of the bot list. It is changed only by PinBot: saving a bot never touches it. */

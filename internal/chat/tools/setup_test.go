@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -18,35 +19,30 @@ func (m *memBots) SaveBot(_ context.Context, in chat.BotInput) (chat.Bot, error)
 	return m.bot, nil
 }
 
-func TestSetupOffersToolsOnlyWhileSettingUp(t *testing.T) {
+func TestSetupOffersSaveProfileOnlyWhileSettingUp(t *testing.T) {
 	tool := &Setup{Bots: &memBots{}}
 	setting := chat.Bot{Config: chat.BotConfig{Setup: true}}
-	if got := tool.Specs(setting, llm.Caps{Tools: true}); len(got) != 2 {
-		t.Fatalf("setup bot: want 2 specs, got %d", len(got))
+	if got := specNames(tool.Specs(setting, llm.Caps{Tools: true})); !slices.Equal(got, []string{SaveProfileName}) {
+		t.Fatalf("setup bot: want only save_profile (ask_user is every bot's own tool), got %v", got)
 	}
-	if got := tool.Specs(chat.Bot{}, llm.Caps{Tools: true}); len(got) != 1 || got[0].Name != UpdateInstructionsName {
-		t.Fatalf("finished bot: want only update_instructions, got %+v", got)
+	if got := specNames(tool.Specs(chat.Bot{}, llm.Caps{Tools: true})); !slices.Equal(got, []string{UpdateInstructionsName}) {
+		t.Fatalf("finished bot: want only update_instructions, got %v", got)
 	}
 	if got := tool.Specs(setting, llm.Caps{}); got != nil {
 		t.Fatalf("model without tools: want no specs, got %d", len(got))
 	}
 }
 
-func TestAskUserEmitsQuestionPart(t *testing.T) {
-	tool := &Setup{Bots: &memBots{}}
-	rc := chat.RunContext{BotID: "b", Bot: chat.Bot{Config: chat.BotConfig{Setup: true}}}
-	res, err := tool.Call(context.Background(), rc, AskUserName, json.RawMessage(`{"question":" What for? ","options":[{"label":"Writing","description":" Prose "},{"label":" Coding "}]}`))
-	if err != nil || res.IsError {
-		t.Fatalf("unexpected failure: %v %+v", err, res)
+// A bot in setup interviews the user with ask_user and then saves with save_profile: it has both.
+func TestSetupBotHasAskUserAndSaveProfile(t *testing.T) {
+	setting := chat.Bot{Config: chat.BotConfig{Setup: true}}
+	caps := llm.Caps{Tools: true}
+	var got []string
+	for _, tool := range []chat.Tool{AskUser{}, &Setup{Bots: &memBots{}}} {
+		got = append(got, specNames(tool.Specs(setting, caps))...)
 	}
-	want := chat.MsgPart{Type: chat.PartQuestion, Text: "What for?", Choices: []chat.Choice{{Label: "Writing"}, {Label: "Coding"}}}
-	if len(res.Parts) != 1 || res.Parts[0].Type != want.Type || res.Parts[0].Text != want.Text || len(res.Parts[0].Choices) != 2 || res.Parts[0].Choices[1].Label != "Coding" {
-		t.Fatalf("parts = %+v", res.Parts)
-	}
-	for _, bad := range []string{`{"question":"","options":[{"label":"a"},{"label":"b"}]}`, `{"question":"q","options":[{"label":"only"}]}`, `{"question":"q","options":[{"label":"a"},{"label":"b"},{"label":"c"},{"label":"d"},{"label":"e"},{"label":"f"},{"label":"g"}]}`, `{"question":"q","options":[{"label":"a"},{"label":""}]}`} {
-		if res, _ := tool.Call(context.Background(), rc, AskUserName, json.RawMessage(bad)); !res.IsError {
-			t.Errorf("accepted %s", bad)
-		}
+	if want := []string{AskUserName, SaveProfileName}; !slices.Equal(got, want) {
+		t.Fatalf("setup bot tools = %v, want %v", got, want)
 	}
 }
 
