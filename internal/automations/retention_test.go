@@ -17,14 +17,26 @@ import (
 	"github.com/rayorole/orole-os-desktop/internal/events"
 )
 
+// insertRun writes a run and its journal row in one transaction. The engine's
+// scheduler prunes concurrently (once at start, on its first tick), so with two
+// separate statements a stale run could be deleted before its journal row is
+// written, failing that insert on the run_id foreign key.
 func insertRun(t *testing.T, e *Engine, d Definition, status string, created, finished int64) string {
 	t.Helper()
 	raw, _ := json.Marshal(d)
 	id := uuid.NewString()
-	if _, err := e.db.Exec(`INSERT INTO automation_runs(id,automation_id,status,trigger_type,trigger_data,chain,definition,created_at,started_at,finished_at) VALUES(?,?,?,'manual','{}','[]',?,?,0,?)`, id, d.ID, status, string(raw), created, finished); err != nil {
+	tx, err := e.db.Begin()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.db.Exec(`INSERT INTO automation_steps_journal(run_id,step_id,seq,step_type,status,idempotency_key) VALUES(?,?,?,?,?,?)`, id, "s", 0, "notify", "succeeded", id); err != nil {
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO automation_runs(id,automation_id,status,trigger_type,trigger_data,chain,definition,created_at,started_at,finished_at) VALUES(?,?,?,'manual','{}','[]',?,?,0,?)`, id, d.ID, status, string(raw), created, finished); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO automation_steps_journal(run_id,step_id,seq,step_type,status,idempotency_key) VALUES(?,?,?,?,?,?)`, id, "s", 0, "notify", "succeeded", id); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	return id
@@ -212,7 +224,13 @@ func TestRunSummariesComeFromMemory(t *testing.T) {
 	e := openEngine(t, filepath.Join(t.TempDir(), "db"), Options{Notifier: notifyFunc(func(context.Context, NotificationRequest) (any, error) { return true, nil }), Changed: func(r Run) { mu.Lock(); seen = append(seen, r); mu.Unlock() }})
 	r := runDef(t, e, Definition{Name: "gate", Steps: []Step{{ID: "ok", Type: "approval", Params: json.RawMessage(`{"message":"go?"}`)}, {ID: "n", Type: "notify", Params: json.RawMessage(`{"title":"Hi","level":"info"}`)}}})
 	awaitStatus(t, e, r.ID, "waiting-approval")
-	if live, ok := e.liveRun(r.ID); !ok || live.Status != "waiting-approval" || live.StartedAt == 0 {
+	// status() commits the row before applyStatus mirrors it into memory, so the
+	// committed status Detail reads can briefly lead the in-memory one.
+	live, ok := e.liveRun(r.ID)
+	for until := time.Now().Add(2 * time.Second); (!ok || live.Status != "waiting-approval") && time.Now().Before(until); live, ok = e.liveRun(r.ID) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !ok || live.Status != "waiting-approval" || live.StartedAt == 0 {
 		t.Fatalf("waiting run not tracked: %+v %v", live, ok)
 	}
 	if err := e.Approve(context.Background(), r.ID, "ok", true, ""); err != nil {
