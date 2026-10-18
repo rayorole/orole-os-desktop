@@ -9,6 +9,7 @@ notes. See `docs/development/updates.md`.
 ## Unreleased
 
 ### Added
+- Push notifications through ntfy. In Settings > Alerts, each kind (Needs you, Failed, Finished, Bot replies, Flow messages) has a Push toggle next to In app and Sound, off by default. Below the table you switch push on, choose the server (default ntfy.sh, or your own), copy or regenerate the topic, optionally add an access token and press Send test. The topic works like a password on a public server, and on ntfy.sh messages pass through their server and are cached for about 12 hours. The topic and token are kept in Windows Credential Manager.
 - You can paste images (a screenshot from the clipboard) and files (copied in the file explorer) into the bot chat box, the new task box and the follow-up box of a running code task, and drop files onto them. Pasted files are listed as chips (images show a thumbnail) that you can remove before sending. Pasting text works as before, also when the clipboard carries a picture of the text as well, as copying cells from a spreadsheet does. Code tasks take up to 8 files of 2 MB each and tell you which file is too large; the bot chat takes 10 files of 20 MB. Files with names Windows would refuse (colons, slashes, reserved names) are stored under a cleaned-up name.
 - Code agents (Claude Code, Codex, Oh My Pi) still receive attached files as copies in the task folder, listed in the prompt; nothing changed there.
 

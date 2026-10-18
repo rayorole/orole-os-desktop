@@ -128,7 +128,9 @@ Settings groups this surface into **Alerts** and **Automation limits**, retainin
 Alerts is one card with a row per notification kind (Needs you, Failed, Finished, Bot replies, Flow messages): an icon,
 what it reports, and In app and Sound toggle buttons (`aria-pressed`) plus a play button for the kind's cue. The daemon
 keeps approvals visible (`notifications.Prefs.normalize`), so the Needs you In app toggle is locked; a hidden kind is also
-silent. The card footer shows saving status and links to the volume. Errors and connection recovery stay visible.
+silent. Each row also has a Push toggle that sends the kind to ntfy (off by default; independent of In app, so a hidden kind
+can still push). Below the card, **Push notifications** holds the master switch, server URL, topic (copy, regenerate with
+confirmation, password warning), masked access token and Send test; see `desktop-integration.md`. The card footer shows saving status and links to the volume. Errors and connection recovery stay visible.
 Automation limits separates concurrency controls from local webhooks. Port and signing instructions are under connection
 details; credential generation and explicit replacement confirmation remain available. Drafts survive save failures,
 and offline state prevents mutations while still allowing cancellation of secret replacement.

@@ -7,13 +7,14 @@ vi.mock("@/lib/backend", () => ({ inDesktop: true }));
 vi.mock("@/lib/audio", () => ({ playSound: mocks.playSound }));
 vi.mock("@/stores/daemon", () => ({ useDaemon: Object.assign((selector: (state: { link: string }) => unknown) => selector({ link: mocks.link }), { getState: () => ({ refresh: mocks.refresh }) }) }));
 vi.mock("@/stores/notifications", () => ({ useNotifications: vi.fn() }));
+vi.mock("./PushSettings", () => ({ PushSettings: () => null }));
 import { useNotifications } from "@/stores/notifications";
 import { NotificationSettings } from "./NotificationSettings";
 
 function notificationState() {
   const prefs: Prefs = { kinds: {
-    approval: { inApp: true, sound: true }, failed: { inApp: true, sound: true }, finished: { inApp: true, sound: false },
-    reply: { inApp: false, sound: true }, message: { inApp: true, sound: true },
+    approval: { inApp: true, sound: true, push: false }, failed: { inApp: true, sound: true, push: false }, finished: { inApp: true, sound: false, push: false },
+    reply: { inApp: false, sound: true, push: false }, message: { inApp: true, sound: true, push: false },
   } };
   return {
     prefs, prefsLoading: false, prefsSaving: false, prefsError: null as string | null,
@@ -45,10 +46,10 @@ describe("NotificationSettings", () => {
   it("saves one kind at a time and previews a sound being turned on", () => {
     render(<NotificationSettings />);
     fireEvent.click(button("Play a sound for Finished"));
-    expect(mocks.setKindPref).toHaveBeenLastCalledWith("finished", { inApp: true, sound: true });
+    expect(mocks.setKindPref).toHaveBeenLastCalledWith("finished", { inApp: true, sound: true, push: false });
     expect(mocks.playSound).toHaveBeenLastCalledWith("finished", "notification");
     fireEvent.click(button("Show Failed in app"));
-    expect(mocks.setKindPref).toHaveBeenLastCalledWith("failed", { inApp: false, sound: true });
+    expect(mocks.setKindPref).toHaveBeenLastCalledWith("failed", { inApp: false, sound: true, push: false });
     fireEvent.click(button("Play the Failed sound"));
     expect(mocks.playSound).toHaveBeenLastCalledWith("failed", "notification");
   });
@@ -57,6 +58,23 @@ describe("NotificationSettings", () => {
     render(<NotificationSettings />);
     expect(button("Show Needs you in app")).toBeDisabled();
     expect(button("Play a sound for Needs you")).toBeEnabled();
+  });
+
+  it("toggles push per kind, off unless stored, and independent of the other channels", () => {
+    state.prefs!.kinds.failed = { inApp: true, sound: true, push: true };
+    state.prefs!.kinds.reply = { inApp: false, sound: false, push: true };
+    render(<NotificationSettings />);
+    expect(button("Send Failed as a push notification")).toHaveAttribute("aria-pressed", "true");
+    expect(button("Send Finished as a push notification")).toHaveAttribute("aria-pressed", "false");
+    // A kind hidden in app can still be pushed.
+    expect(button("Send Bot replies as a push notification")).toBeEnabled();
+    fireEvent.click(button("Send Finished as a push notification"));
+    expect(mocks.setKindPref).toHaveBeenLastCalledWith("finished", { inApp: true, sound: false, push: true });
+    fireEvent.click(button("Send Failed as a push notification"));
+    expect(mocks.setKindPref).toHaveBeenLastCalledWith("failed", { inApp: true, sound: true, push: false });
+    // Approvals stay shown but are pushed only when asked.
+    fireEvent.click(button("Send Needs you as a push notification"));
+    expect(mocks.setKindPref).toHaveBeenLastCalledWith("approval", { inApp: true, sound: true, push: true });
   });
 
   it.each(["offline", "loading", "saving"])("disables changes while %s", (mode) => {

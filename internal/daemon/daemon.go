@@ -31,6 +31,7 @@ import (
 	"github.com/rayorole/orole-os-desktop/internal/llm/manifest"
 	"github.com/rayorole/orole-os-desktop/internal/machines"
 	"github.com/rayorole/orole-os-desktop/internal/mcp"
+	"github.com/rayorole/orole-os-desktop/internal/notifications"
 	"github.com/rayorole/orole-os-desktop/internal/plugins"
 	"github.com/rayorole/orole-os-desktop/internal/policy"
 	"github.com/rayorole/orole-os-desktop/internal/projects"
@@ -69,6 +70,8 @@ type Daemon struct {
 	ChatMemory *memory.Store
 	// Jarvis places and takes the owner's phone calls for bots (svc_jarvis.go).
 	Jarvis *jarvis.Service
+	// Ntfy pushes notifications to an ntfy server when the user switched it on (svc_notifications.go).
+	Ntfy *notifications.Ntfy
 	// Sandbox runs one local VM per bot (svc_sandbox.go). sandboxLife is the lifetime of its background setup,
 	// downloads, deletes and startup sweep (sandboxStart); sandboxStop ends them and sandboxWG waits for them;
 	// sandboxClosing (under sandboxMu) refuses new ones once shutdown began. sandboxStore is its table.

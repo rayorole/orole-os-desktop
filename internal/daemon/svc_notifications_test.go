@@ -3,6 +3,8 @@ package daemon_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -152,5 +154,59 @@ func TestFlowRunNotifications(t *testing.T) {
 	c.call("notifications.list", notifications.ListOptions{NeedsYou: true}, &waiting)
 	if len(waiting.Items) != 0 || waiting.NeedsYou != 0 {
 		t.Fatalf("resolved approval still listed: %+v", waiting)
+	}
+}
+
+// Push goes out through the real daemon wiring: the IPC settings, the kind's toggle, then the
+// notification itself, without the daemon ever holding the topic or token in the database.
+func TestPushNotificationReachesNtfyForTheKindsTurnedOn(t *testing.T) {
+	defer daemon.UseMemoryLLMCredentials()()
+	type publish struct {
+		auth string
+		body map[string]any
+	}
+	posts := make(chan publish, 8)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		posts <- publish{auth: r.Header.Get("Authorization"), body: body}
+	}))
+	defer srv.Close()
+	c := connectNotifications(t)
+
+	token := "tk_daemon"
+	var view notifications.NtfyView
+	c.call("notifications.ntfy.set", notifications.NtfyUpdate{Enabled: true, Server: srv.URL, Token: &token}, &view)
+	if !view.Enabled || !view.TokenSet || len(view.Topic) < 30 {
+		t.Fatalf("config: %+v", view)
+	}
+	prefs := notifications.DefaultPrefs()
+	prefs.Kinds[notifications.Failed] = notifications.KindPref{InApp: true, Sound: true, Push: true}
+	c.call("notifications.prefs.set", prefs, nil)
+
+	// Message does not push; Failed does, with its priority and the stored credentials.
+	c.call("notifications.test", nil, nil)
+	c.call("notifications.notify", notifications.Input{Source: "task", Kind: notifications.Failed, Level: notifications.Error, Title: "Fix login", Body: "exit 1", Target: "task:t1"}, nil)
+	select {
+	case p := <-posts:
+		if p.auth != "Bearer tk_daemon" || p.body["topic"] != view.Topic || p.body["title"] != "Fix login" || p.body["priority"] != float64(4) || p.body["click"] != "orole://open/agents" {
+			t.Fatalf("push: %+v", p)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the failed notification was not pushed")
+	}
+	select {
+	case p := <-posts:
+		t.Fatalf("the message kind has Push off but sent %+v", p)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	var sent notifications.NtfyTestResult
+	c.call("notifications.ntfy.test", nil, &sent)
+	if !sent.OK || sent.Error != "" {
+		t.Fatalf("test push: %+v", sent)
+	}
+	if p := <-posts; p.body["title"] != "Orole test push" {
+		t.Fatalf("test push body: %+v", p)
 	}
 }

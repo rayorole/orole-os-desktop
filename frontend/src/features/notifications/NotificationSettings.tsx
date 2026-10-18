@@ -1,5 +1,5 @@
 import { useEffect, type ComponentType, type CSSProperties } from "react";
-import { Bell, Check, Hand, Inbox, Lock, MessageCircle, Play, Volume2, VolumeOff, X } from "lucide-react";
+import { Bell, Check, Hand, Inbox, Lock, MessageCircle, Play, Smartphone, Volume2, VolumeOff, X } from "lucide-react";
 import type { KindPref } from "@/mygo";
 import { inDesktop } from "@/lib/backend";
 import { playSound } from "@/lib/audio";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { PushSettings } from "@/features/notifications/PushSettings";
 
 type Icon = ComponentType<{ className?: string }>;
 
@@ -43,10 +44,10 @@ export function NotificationSettings() {
 
   if (!inDesktop) return <Empty><EmptyHeader><EmptyTitle>Open the desktop app</EmptyTitle><EmptyDescription>Notification preferences are saved by the Orole daemon, not in the browser preview.</EmptyDescription></EmptyHeader></Empty>;
   const disabled = offline || n.prefsSaving || n.prefsLoading || !n.prefs;
-  const pref = (kind: NotificationKind): KindPref => n.prefs?.kinds?.[kind] ?? { inApp: true, sound: true };
+  const pref = (kind: NotificationKind): KindPref => n.prefs?.kinds?.[kind] ?? { inApp: true, sound: true, push: false };
   return (
     <div className="flex max-w-3xl flex-col gap-4">
-      <p className="text-muted-foreground">Notifications appear in the bell at the top right, each kind with its own sound. Changes save automatically.</p>
+      <p className="text-muted-foreground">Notifications appear in the bell at the top right, each kind with its own sound, and can also be pushed to your phone or PC through ntfy. Changes save automatically.</p>
       {offline && <Alert variant="warning"><AlertTitle>Daemon offline</AlertTitle><AlertDescription>Reconnect to load or save notification preferences.</AlertDescription></Alert>}
       {n.prefsError && <Alert variant="error"><AlertTitle>Preferences could not be loaded or saved</AlertTitle><AlertDescription>{n.prefsError}</AlertDescription></Alert>}
       {(n.prefsError || offline) && <Button size="sm" variant="outline" className="self-start" disabled={n.prefsLoading || n.prefsSaving} onClick={() => { void useDaemon.getState().refresh(); void n.loadPrefs(); }}>Retry connection</Button>}
@@ -56,6 +57,7 @@ export function NotificationSettings() {
           <span className="flex-1">Event</span>
           <span className="w-12 text-center">In app</span>
           <span className="w-[5.5rem] text-center">Sound</span>
+          <span className="w-12 text-center">Push</span>
         </div>
         <ul className="divide-y">
           {ROWS.map((row) => {
@@ -81,6 +83,8 @@ export function NotificationSettings() {
                   }} />
                 <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" aria-label={`Play the ${row.title} sound`} data-ui-sound="none" onClick={() => void playSound(row.kind, "notification")} />}><Play /></TooltipTrigger><TooltipPopup>Play sound</TooltipPopup></Tooltip>
               </div>
+              <Channel on={p.push} disabled={disabled} label={`Send ${row.title} as a push notification`} iconOn={Smartphone} iconOff={Smartphone}
+                onToggle={() => void n.setKindPref(row.kind, { ...p, push: !p.push })} />
             </li>;
           })}
         </ul>
@@ -89,6 +93,7 @@ export function NotificationSettings() {
           <Button size="xs" variant="ghost" className="text-muted-foreground" onClick={() => useUI.getState().openSettings("customization", "sound")}>Volume</Button>
         </div>
       </section>}
+      {n.prefs && <PushSettings />}
     </div>
   );
 }
