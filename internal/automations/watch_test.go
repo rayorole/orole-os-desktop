@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 type fakeWatch struct {
@@ -21,6 +22,12 @@ func (f *fakeWatch) Poll(_ context.Context, actor string, _ Watch) ([]WatchItem,
 	defer f.mu.Unlock()
 	f.actor = actor
 	return f.items, f.err
+}
+
+func (f *fakeWatch) polledAs() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.actor
 }
 
 func (f *fakeWatch) set(err error, keys ...string) {
@@ -44,6 +51,22 @@ func pollOnce(t *testing.T, e *Engine, id string) error {
 		t.Fatalf("no watch automation %s", id)
 	}
 	return e.pollWatch(it, *it.def.Trigger.Watch)
+}
+
+// awaitLoopBaseline waits for the engine's watch loop to record its first poll of
+// a just-saved watch. Saving wakes the loop, which polls a new watch at once and
+// then not again for watchInterval, so the test's own pollOnce calls that follow
+// cannot race it. The source must already return the baseline items.
+func awaitLoopBaseline(t *testing.T, e *Engine, id string) {
+	t.Helper()
+	for until := time.Now().Add(5 * time.Second); time.Now().Before(until); time.Sleep(5 * time.Millisecond) {
+		var watch string
+		err := e.db.QueryRow(`SELECT watch FROM automation_watch_state WHERE automation_id=?`, id).Scan(&watch)
+		if err == nil && watch != "" {
+			return
+		}
+	}
+	t.Fatalf("watch loop never polled %s", id)
 }
 
 func runKeys(t *testing.T, e *Engine, id string) []string {
@@ -76,17 +99,20 @@ func TestWatchRunsOncePerNewItemAfterABaseline(t *testing.T) {
 	e := openEngine(t, filepath.Join(t.TempDir(), "db"), Options{})
 	src := &fakeWatch{}
 	e.SetWatchSource("github", src)
-	d := saveDef(t, e, watchDef("", "main"))
-
+	// The source holds the baseline before the save: saving an enabled watch makes
+	// the engine's loop poll it right away, and a loop poll of an empty source
+	// would make c1 and c2 look new to the test's poll below.
 	src.set(nil, "c2", "c1")
+	d := saveDef(t, e, watchDef("", "main"))
+	awaitLoopBaseline(t, e, d.ID)
 	if err := pollOnce(t, e, d.ID); err != nil {
 		t.Fatal(err)
 	}
 	if got := runKeys(t, e, d.ID); len(got) != 0 {
 		t.Fatalf("baseline poll ran %v", got)
 	}
-	if src.actor != "automation:"+d.ID {
-		t.Fatalf("polled as %q", src.actor)
+	if actor := src.polledAs(); actor != "automation:"+d.ID {
+		t.Fatalf("polled as %q", actor)
 	}
 	src.set(nil, "c4", "c3", "c2", "c1")
 	if err := pollOnce(t, e, d.ID); err != nil {
