@@ -625,6 +625,9 @@ describe("mentions, structured output and search", () => {
     fireEvent.click(option);
     await waitFor(() => expect(box().value).toBe("use @Canvas LMS "));
     type(`${box().value}for my deadlines`);
+    // Picking puts the caret after the mention on the next animation frame. Until then the composer still reads
+    // the caret inside "@can", keeps the menu open, and Enter would pick again instead of sending.
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
     fireEvent.keyDown(box(), { key: "Enter" });
     await waitFor(() => expect(bridge.send).toHaveBeenCalledTimes(1));
     expect(bridge.send.mock.calls[0]![0]).toMatchObject({ text: "use @Canvas LMS for my deadlines", integrations: ["srv-canvas"] });
