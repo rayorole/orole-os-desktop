@@ -571,6 +571,9 @@ describe("mentions, structured output and search", () => {
     expect(screen.queryByRole("option", { name: /Atlas/ })).toBeNull();
     expect(screen.queryByRole("option", { name: /pdf/ })).toBeNull();
     type(`${box().value.trim()} what do you think?`);
+    // As in the integration test below: the caret moves behind the mention on the next frame; until then the menu
+    // stays open and Enter would pick again instead of sending.
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
     fireEvent.keyDown(box(), { key: "Enter" });
     await waitFor(() => expect(bridge.send).toHaveBeenCalledTimes(1));
     expect(bridge.send.mock.calls[0]![0]).toMatchObject({ botId: "a", text: "@Coach what do you think?", mentions: ["b"] });
