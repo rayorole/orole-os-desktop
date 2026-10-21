@@ -142,6 +142,9 @@ func TestWatchFilterAndErrorsAreVisible(t *testing.T) {
 	src := &fakeWatch{}
 	e.SetWatchSource("github", src)
 	d := saveDef(t, e, watchDef("event.data.sha == 'keep'", "main"))
+	// Saving an enabled watch makes the loop poll it once: let that baseline land (from the empty source) so it
+	// cannot overlap the test's polls, where a late loop poll overwrote the 401 error below with a success.
+	awaitLoopBaseline(t, e, d.ID)
 	src.set(nil)
 	_ = pollOnce(t, e, d.ID)
 	src.set(nil, "keep", "skip")
