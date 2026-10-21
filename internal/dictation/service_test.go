@@ -380,7 +380,10 @@ func TestDownloadFailures(t *testing.T) {
 	}{
 		{"hash mismatch", func(e *env) { e.catalog[0].Files[1].SHA256 = strings.Repeat("0", 64) }, msgCorrupted, "corrupted", "dec.bin", false},
 		{"missing on server", func(e *env) { e.catalog[0].Files[2].URL = e.srv.URL + "/gone" }, "The download server answered 404 Not Found. Try again later.", "http_404", "tok.txt", false},
-		{"stalled", func(e *env) { e.srv.hang["/small/dec.bin"] = true; e.svc.stall = 100 * time.Millisecond }, msgStalled, "stalled", "dec.bin", true},
+		// The watchdog also runs while earlier files download and while dec.bin's headers are awaited. It must
+		// only fire in the hang, after dec.bin's first half is on disk: 100 ms was shorter than those normal
+		// gaps on a busy runner, which failed with "stalled" before dec.bin.part existed.
+		{"stalled", func(e *env) { e.srv.hang["/small/dec.bin"] = true; e.svc.stall = 2 * time.Second }, msgStalled, "stalled", "dec.bin", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newEnv(t)
