@@ -116,4 +116,4 @@ jobs:
         run: |
           cmd="gh release edit $RELEASE_TAG --draft=false --latest=false"
           echo "::notice title=Draft release $RELEASE_TAG is ready::Review it, then publish with: $cmd"
-          printf 'Draft release **%s** is ready. Review it, then publish with:\n\n`%s`\n' "$RELEASE_TAG" "$cmd" >> "$GITHUB_STEP_SUMMARY"
+          printf "Draft release **%s** is ready. Review it, then publish with:\n\n\`%s\`\n" "$RELEASE_TAG" "$cmd" >> "$GITHUB_STEP_SUMMARY"
