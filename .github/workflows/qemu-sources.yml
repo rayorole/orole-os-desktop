@@ -66,8 +66,8 @@ jobs:
           test "$(git rev-parse HEAD)" = "$QEMU_COMMIT"
           git submodule update --init --depth 1 --jobs 8 || git submodule update --init --jobs 8
           (cd roms/edk2 && git submodule update --init --depth 1 --jobs 8)
-          (cd roms/seabios && git describe --tags --long --dirty > .version 2>/dev/null || git rev-parse --short HEAD > .version)
-          (cd roms/skiboot && ./make_version.sh > .version 2>/dev/null || git rev-parse --short HEAD > .version)
+          (cd roms/seabios && { git describe --tags --long --dirty > .version 2>/dev/null || git rev-parse --short HEAD > .version; })
+          (cd roms/skiboot && { ./make_version.sh > .version 2>/dev/null || git rev-parse --short HEAD > .version; })
           # QEMU's own bundled meson (python/wheels), as its configure would use.
           python3 -m venv ../meson-venv && ../meson-venv/bin/pip -q install python/wheels/meson-*.whl
           ../meson-venv/bin/meson subprojects download
