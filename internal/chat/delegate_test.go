@@ -134,7 +134,12 @@ func TestTheCallerStaysFreeWhileTheTaskRuns(t *testing.T) {
 	}
 
 	close(release)
-	e.until("the report to arrive", func() bool { return len(e.reports(caller.ID)) == 1 })
+	// The report row is stored before the caller's run that answers it is registered, so idle alone could
+	// return before that run starts: wait for the answer itself.
+	e.until("the caller to answer the report", func() bool {
+		h := e.history(caller.ID)
+		return len(h) == 4 && h[3].Status == StatusComplete
+	})
 	e.idle(caller.ID)
 	e.idle(callee.ID)
 	if note := e.m.handoffsNote(caller.ID); note != "" {
